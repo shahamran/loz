@@ -14,10 +14,11 @@ pub fn disassemble_chunk(c: *const Chunk, name: []const u8) void {
 
 pub fn disassemble_instruction(c: *const Chunk, offset: usize) usize {
     std.debug.print("{d:0>4} ", .{offset});
-    if (offset > 0 and c.lines[offset] == c.lines[offset - 1]) {
+    const line = get_line(c, offset);
+    if (offset > 0 and line == get_line(c, offset - 1)) {
         std.debug.print("   | ", .{});
     } else {
-        std.debug.print("{d: >4} ", .{c.lines[offset]});
+        std.debug.print("{d: >4} ", .{line});
     }
     const code: OpCode = @enumFromInt(c.code[offset]);
     switch (code) {
@@ -45,4 +46,13 @@ fn constant_instruction(name: []const u8, c: *const Chunk, offset: usize) usize 
     value.print_value(c.constants.values.items[constant]);
     std.debug.print("'\n", .{});
     return offset + 2;
+}
+
+fn get_line(c: *const Chunk, offset: usize) usize {
+    for (c.lines.items, 0..) |line, i| {
+        if (line.start > offset) {
+            return c.lines.items[i - 1].line;
+        }
+    }
+    return c.lines.getLast().line;
 }

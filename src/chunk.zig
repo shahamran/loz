@@ -7,7 +7,7 @@ const ValueArray = value.ValueArray;
 
 pub const Chunk = struct {
     code: []u8,
-    lines: []usize,
+    lines: std.ArrayList(LineInfo),
     size: usize,
     allocator: Allocator,
     constants: ValueArray,
@@ -17,16 +17,16 @@ pub const Chunk = struct {
     pub fn init(allocator: Allocator) Self {
         return .{
             .code = &[_]u8{},
-            .lines = &[_]usize{},
             .size = 0,
             .allocator = allocator,
             .constants = ValueArray.init(allocator),
+            .lines = std.ArrayList(LineInfo).init(allocator),
         };
     }
 
     pub fn deinit(self: *Self) void {
         _ = memory.reallocate(self.allocator, self.code, 0) catch unreachable;
-        _ = memory.reallocate(self.allocator, self.lines, 0) catch unreachable;
+        self.lines.deinit();
         self.constants.deinit();
         self.* = init(self.allocator);
     }
@@ -35,10 +35,11 @@ pub const Chunk = struct {
         if (self.size + 1 > self.code.len) {
             const new_n = memory.grow_capacity(self.size);
             self.code = try memory.reallocate(self.allocator, self.code, new_n);
-            self.lines = try memory.reallocate(self.allocator, self.lines, new_n);
         }
         self.code[self.size] = byte;
-        self.lines[self.size] = line;
+        if (self.lines.items.len == 0 or self.lines.getLast().line != line) {
+            try self.lines.append(.{ .line = line, .start = self.size });
+        }
         self.size += 1;
     }
 
@@ -50,6 +51,11 @@ pub const Chunk = struct {
 pub const OpCode = enum(u8) {
     op_constant,
     op_return,
+};
+
+pub const LineInfo = struct {
+    line: usize,
+    start: usize,
 };
 
 test "write" {
