@@ -9,9 +9,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     var c = Chunk.init(allocator);
     defer c.deinit();
-    const constant: u8 = @intCast(try c.add_constant(1.2));
-    try c.write(@intFromEnum(OpCode.op_constant), 123);
-    try c.write(constant, 123);
+    try c.write_constant(1.2, 123);
     try c.write(@intFromEnum(OpCode.op_return), 123);
     debug.disassemble_chunk(&c, "test chunk");
 }

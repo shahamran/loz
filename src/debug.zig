@@ -25,6 +25,9 @@ pub fn disassemble_instruction(c: *const Chunk, offset: usize) usize {
         OpCode.op_constant => {
             return constant_instruction("OP_CONSTANT", c, offset);
         },
+        OpCode.op_constant_long => {
+            return constant_long_instruction("OP_CONSTANT_LONG", c, offset);
+        },
         OpCode.op_return => {
             return simple_instruction("OP_RETURN", offset);
         },
@@ -48,7 +51,21 @@ fn constant_instruction(name: []const u8, c: *const Chunk, offset: usize) usize 
     return offset + 2;
 }
 
+fn constant_long_instruction(name: []const u8, c: *const Chunk, offset: usize) usize {
+    const bytes = .{
+        @as(u24, c.code[offset + 1]),
+        @as(u24, c.code[offset + 2]),
+        @as(u24, c.code[offset + 3]),
+    };
+    const constant = @as(usize, bytes[0] | (bytes[1] << 8) | (bytes[2] << 16));
+    std.debug.print("{s: <16} {d: >4} '", .{ name, constant });
+    value.print_value(c.constants.values.items[constant]);
+    std.debug.print("'\n", .{});
+    return offset + 4;
+}
+
 fn get_line(c: *const Chunk, offset: usize) usize {
+    // TODO: binary search
     for (c.lines.items, 0..) |line, i| {
         if (line.start > offset) {
             return c.lines.items[i - 1].line;

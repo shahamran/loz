@@ -46,10 +46,30 @@ pub const Chunk = struct {
     pub fn add_constant(self: *Self, val: Value) Allocator.Error!usize {
         return try self.constants.write(val);
     }
+
+    pub fn write_constant(self: *Self, val: Value, line: usize) Allocator.Error!void {
+        const const_index = try self.add_constant(val);
+        if (const_index < 256) {
+            try self.write(@intFromEnum(OpCode.op_constant), line);
+            try self.write(@intCast(const_index), line);
+            return;
+        } else {
+            const bytes: [3]u8 = .{
+                @intCast(const_index & 0xff),
+                @intCast((const_index >> 8) & 0xff),
+                @intCast((const_index >> 16) & 0xff),
+            };
+            try self.write(@intFromEnum(OpCode.op_constant_long), line);
+            try self.write(bytes[0], line);
+            try self.write(bytes[1], line);
+            try self.write(bytes[2], line);
+        }
+    }
 };
 
 pub const OpCode = enum(u8) {
     op_constant,
+    op_constant_long,
     op_return,
 };
 
