@@ -13,8 +13,9 @@ pub fn compile(allocator: Allocator, source: []const u8) !void {
         } else {
             std.debug.print("   | ", .{});
         }
-        std.debug.print("{d: >2} '{s}'\n", .{ @intFromEnum(token.kind), token.text });
-        if (token.kind == scanner.TokenType.eof) break;
+        const kind = std.enums.tagName(scanner.TokenType, token.kind) orelse unreachable;
+        std.debug.print("{s: >12} '{s}'\n", .{ kind, token.text });
+        if (token.kind == .eof) break;
     }
     _ = allocator;
 }

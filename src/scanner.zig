@@ -1,3 +1,5 @@
+const std = @import("std");
+
 pub fn init_scanner(source: []const u8) void {
     scanner.source = source;
     scanner.current = 0;
@@ -13,9 +15,8 @@ pub fn scan_token() Token {
         return make_token(.eof);
     }
     const c = advance();
-    if (is_digit(c)) {
-        return number();
-    }
+    if (is_alpha(c)) return identifier();
+    if (is_digit(c)) return number();
     switch (c) {
         '(' => return make_token(.left_paren),
         ')' => return make_token(.right_paren),
@@ -108,10 +109,54 @@ fn string() Token {
     return make_token(.string);
 }
 
+fn identifier() Token {
+    while (is_alpha(peek()) or is_digit(peek())) _ = advance();
+    return make_token(identifier_type());
+}
+
+fn identifier_type() TokenType {
+    switch (scanner.source[0]) {
+        'a' => return check_keyword(1, "nd", .and_),
+        'c' => return check_keyword(1, "lass", .class),
+        'e' => return check_keyword(1, "lse", .else_),
+        'f' => if (scanner.current > 1) {
+            switch (scanner.source[1]) {
+                'a' => return check_keyword(2, "lse", .false_),
+                'o' => return check_keyword(2, "r", .for_),
+                'u' => return check_keyword(2, "n", .fun),
+                else => {},
+            }
+        },
+        'i' => return check_keyword(1, "f", .if_),
+        'n' => return check_keyword(1, "il", .nil),
+        'o' => return check_keyword(1, "r", .or_),
+        'p' => return check_keyword(1, "rint", .print),
+        'r' => return check_keyword(1, "eturn", .return_),
+        's' => return check_keyword(1, "uper", .super),
+        't' => if (scanner.current > 1) {
+            switch (scanner.source[1]) {
+                'h' => return check_keyword(2, "is", .this),
+                'r' => return check_keyword(2, "ue", .true_),
+                else => {},
+            }
+        },
+        'v' => return check_keyword(1, "ar", .var_),
+        'w' => return check_keyword(1, "hile", .while_),
+        else => {},
+    }
+    return .identifier;
+}
+
+fn check_keyword(start: usize, rest: []const u8, kind: TokenType) TokenType {
+    const current = scanner.source[start .. scanner.current];
+    if (std.mem.eql(u8, current, rest)) return kind;
+    return .identifier;
+}
+
 fn number() Token {
     while (is_digit(peek())) _ = advance();
     if (peek() == '.' and is_digit(peek_next())) {
-        _ = advance();  // consume the ".".
+        _ = advance(); // consume the ".".
         while (is_digit(peek())) _ = advance();
     }
     return make_token(.number);
@@ -183,4 +228,10 @@ fn is_at_end() bool {
 
 fn is_digit(c: u8) bool {
     return c >= '0' and c <= '9';
+}
+
+fn is_alpha(c: u8) bool {
+    return (c >= 'a' and c <= 'z') or
+        (c >= 'A' and c <= 'Z') or
+        c == '_';
 }
