@@ -21,15 +21,14 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
     }
     const code: OpCode = @enumFromInt(chunk.code[offset]);
     switch (code) {
-        OpCode.op_constant => {
-            return constant_instruction("OP_CONSTANT", chunk, offset);
-        },
-        OpCode.op_constant_long => {
-            return constant_long_instruction("OP_CONSTANT_LONG", chunk, offset);
-        },
-        OpCode.op_return => {
-            return simple_instruction("OP_RETURN", offset);
-        },
+        .op_constant => return constant_instruction("OP_CONSTANT", chunk, offset),
+        .op_constant_long => return constant_long_instruction("OP_CONSTANT_LONG", chunk, offset),
+        .op_add => return simple_instruction("OP_ADD", offset),
+        .op_subtract => return simple_instruction("OP_SUBTRACT", offset),
+        .op_multiply => return simple_instruction("OP_MULTIPLY", offset),
+        .op_divide => return simple_instruction("OP_DIVIDE", offset),
+        .op_negate => return simple_instruction("OP_NEGATE", offset),
+        .op_return => return simple_instruction("OP_RETURN", offset),
     }
     std.debug.print("Unknown opcode {}\n", .{chunk.code[offset]});
     return offset + 1;

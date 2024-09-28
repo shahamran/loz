@@ -45,15 +45,27 @@ fn run() Allocator.Error!InterpretResult {
         }
         const instruction: OpCode = @enumFromInt(read_byte());
         switch (instruction) {
-            OpCode.op_constant => {
+            .op_constant => {
                 const constant = read_constant();
                 push(constant);
             },
-            OpCode.op_constant_long => {
+            .op_constant_long => {
                 const constant = read_constant_long();
                 push(constant);
             },
-            OpCode.op_return => {
+            .op_add, .op_subtract, .op_multiply, .op_divide => {
+                const b = pop();
+                const a = pop();
+                push(switch (instruction) {
+                    .op_add => a + b,
+                    .op_subtract => a - b,
+                    .op_multiply => a * b,
+                    .op_divide => a / b,
+                    else => unreachable,
+                });
+            },
+            .op_negate => push(-pop()),
+            .op_return => {
                 print_value(pop());
                 std.debug.print("\n", .{});
                 return InterpretResult.ok;
