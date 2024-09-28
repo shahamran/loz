@@ -7,7 +7,7 @@ pub fn grow_capacity(capacity: usize) usize {
 }
 
 pub fn reallocate(allocator: Allocator, old_mem: anytype, new_n: usize) t: {
-    const Slice = @typeInfo(@TypeOf(old_mem)).Pointer;
+    const Slice = @typeInfo(@TypeOf(old_mem)).pointer;
     break :t Error![]Slice.child;
 } {
     return try allocator.realloc(old_mem, new_n);
