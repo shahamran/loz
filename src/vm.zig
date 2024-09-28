@@ -3,6 +3,7 @@ const Allocator = @import("std").mem.Allocator;
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
+const compiler = @import("compiler.zig");
 const print_value = @import("value.zig").print_value;
 
 const DEBUG_TRACE_EXECUTION = true;
@@ -18,10 +19,9 @@ const VM = struct {
     stack_top: [*]Value,
 };
 
-pub fn interpret(chunk: *Chunk) Allocator.Error!InterpretResult {
-    vm.chunk = chunk;
-    vm.ip = vm.chunk.code.ptr;
-    return run();
+pub fn interpret(allocator: Allocator, source: []const u8) Allocator.Error!InterpretResult {
+    try compiler.compile(allocator, source);
+    return .ok;
 }
 
 pub fn init_vm() void {
