@@ -20,8 +20,15 @@ const VM = struct {
 };
 
 pub fn interpret(allocator: Allocator, source: []const u8) Allocator.Error!InterpretResult {
-    try compiler.compile(allocator, source);
-    return .ok;
+    var chunk = Chunk.init(allocator);
+    defer chunk.deinit();
+
+    if (!try compiler.compile(allocator, source, &chunk)) {
+        return .compile_error;
+    }
+    vm.chunk = &chunk;
+    vm.ip = vm.chunk.code.ptr;
+    return try run();
 }
 
 pub fn init_vm() void {
