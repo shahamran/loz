@@ -6,7 +6,7 @@ const Value = @import("value.zig").Value;
 const compiler = @import("compiler.zig");
 const print_value = @import("value.zig").print_value;
 
-const DEBUG_TRACE_EXECUTION = true;
+const DEBUG_TRACE_EXECUTION = false;
 
 var vm: VM = undefined;
 

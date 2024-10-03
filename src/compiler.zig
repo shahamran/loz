@@ -4,7 +4,7 @@ const scanner = @import("scanner.zig");
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 
-const DEBUG_PRINT_CODE = true;
+const DEBUG_PRINT_CODE = false;
 
 const Parser = struct {
     current: scanner.Token,
@@ -42,6 +42,16 @@ const Precedence = enum {
     unary, // ! -
     call, // . ()
     primary,
+
+    const Self = @This();
+
+    fn higher(self: *const Self) Self {
+        return @enumFromInt(self.int() + 1);
+    }
+
+    fn int(self: *const Self) u8 {
+        return @intFromEnum(self.*);
+    }
 };
 
 const ParseRule = struct {
@@ -61,7 +71,7 @@ fn parse_precedence(precedence: Precedence) Allocator.Error!void {
         return;
     };
     try prefix_rule();
-    while (@intFromEnum(precedence) <= @intFromEnum(rules.get(parser.current.kind).precedence)) {
+    while (precedence.int() <= rules.get(parser.current.kind).precedence.int()) {
         advance();
         const infix_rule = rules.get(parser.previous.kind).infix orelse {
             unreachable;
@@ -94,7 +104,7 @@ fn unary() Allocator.Error!void {
 fn binary() Allocator.Error!void {
     const op_kind = parser.previous.kind;
     const rule = rules.get(op_kind);
-    try parse_precedence(@enumFromInt(@intFromEnum(rule.precedence) + 1));
+    try parse_precedence(rule.precedence.higher());
     try switch (op_kind) {
         .plus => emit_byte(@intFromEnum(OpCode.op_add)),
         .minus => emit_byte(@intFromEnum(OpCode.op_subtract)),
@@ -195,7 +205,7 @@ const rules = std.EnumArray(scanner.TokenType, ParseRule).init(.{
     .semicolon = .{ .prefix = null, .infix = null, .precedence = .none },
     .slash = .{ .prefix = null, .infix = binary, .precedence = .factor },
     .star = .{ .prefix = null, .infix = binary, .precedence = .factor },
-    .bang = .{ .prefix = unary, .infix = null, .precedence = .none },
+    .bang = .{ .prefix = null, .infix = null, .precedence = .none },
     .bang_equal = .{ .prefix = null, .infix = null, .precedence = .none },
     .equal = .{ .prefix = null, .infix = null, .precedence = .none },
     .equal_equal = .{ .prefix = null, .infix = null, .precedence = .none },
