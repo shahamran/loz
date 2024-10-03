@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 const scanner = @import("scanner.zig");
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
+const Value = @import("value.zig").Value;
 
 const DEBUG_PRINT_CODE = false;
 
@@ -82,7 +83,16 @@ fn parse_precedence(precedence: Precedence) Allocator.Error!void {
 
 fn number() Allocator.Error!void {
     const value = std.fmt.parseFloat(f64, parser.previous.text) catch unreachable;
-    try emit_constant(value);
+    try emit_constant(Value{ .number = value });
+}
+
+fn literal() Allocator.Error!void {
+    switch (parser.previous.kind) {
+        .false_ => try emit_byte(@intFromEnum(OpCode.op_false)),
+        .true_ => try emit_byte(@intFromEnum(OpCode.op_true)),
+        .nil => try emit_byte(@intFromEnum(OpCode.op_nil)),
+        else => unreachable,
+    }
 }
 
 fn grouping() Allocator.Error!void {
@@ -96,6 +106,7 @@ fn unary() Allocator.Error!void {
     try parse_precedence(.unary);
     // emit the operator instruction.
     try switch (op_kind) {
+        .bang => emit_byte(@intFromEnum(OpCode.op_not)),
         .minus => emit_byte(@intFromEnum(OpCode.op_negate)),
         else => unreachable,
     };
@@ -106,6 +117,12 @@ fn binary() Allocator.Error!void {
     const rule = rules.get(op_kind);
     try parse_precedence(rule.precedence.higher());
     try switch (op_kind) {
+        .bang_equal => emit_two(@intFromEnum(OpCode.op_equal), @intFromEnum(OpCode.op_not)),
+        .equal_equal => emit_byte(@intFromEnum(OpCode.op_equal)),
+        .greater => emit_byte(@intFromEnum(OpCode.op_greater)),
+        .greater_equal => emit_two(@intFromEnum(OpCode.op_less), @intFromEnum(OpCode.op_not)),
+        .less => emit_byte(@intFromEnum(OpCode.op_less)),
+        .less_equal => emit_two(@intFromEnum(OpCode.op_greater), @intFromEnum(OpCode.op_not)),
         .plus => emit_byte(@intFromEnum(OpCode.op_add)),
         .minus => emit_byte(@intFromEnum(OpCode.op_subtract)),
         .star => emit_byte(@intFromEnum(OpCode.op_multiply)),
@@ -141,19 +158,19 @@ fn emit_return() !void {
     try emit_byte(@intFromEnum(OpCode.op_return));
 }
 
-fn emit_with_operand(op: OpCode, operand: u8) !void {
-    try emit_byte(@intFromEnum(op));
-    try emit_byte(operand);
+fn emit_two(byte1: u8, byte2: u8) !void {
+    try emit_byte(byte1);
+    try emit_byte(byte2);
 }
 
-fn emit_constant(value: f64) !void {
+fn emit_constant(value: Value) !void {
     const constant = try current_chunk().add_constant(value);
     if (constant > std.math.maxInt(u8)) {
         // TODO: use op_constan_long instead.
         error_("Too many constants in one chunk.");
         return;
     }
-    try emit_with_operand(.op_constant, @intCast(constant));
+    try emit_two(@intFromEnum(OpCode.op_constant), @intCast(constant));
 }
 
 fn error_(message: []const u8) void {
@@ -205,31 +222,31 @@ const rules = std.EnumArray(scanner.TokenType, ParseRule).init(.{
     .semicolon = .{ .prefix = null, .infix = null, .precedence = .none },
     .slash = .{ .prefix = null, .infix = binary, .precedence = .factor },
     .star = .{ .prefix = null, .infix = binary, .precedence = .factor },
-    .bang = .{ .prefix = null, .infix = null, .precedence = .none },
-    .bang_equal = .{ .prefix = null, .infix = null, .precedence = .none },
+    .bang = .{ .prefix = unary, .infix = null, .precedence = .none },
+    .bang_equal = .{ .prefix = null, .infix = binary, .precedence = .equality },
     .equal = .{ .prefix = null, .infix = null, .precedence = .none },
-    .equal_equal = .{ .prefix = null, .infix = null, .precedence = .none },
-    .greater = .{ .prefix = null, .infix = null, .precedence = .none },
-    .greater_equal = .{ .prefix = null, .infix = null, .precedence = .none },
-    .less = .{ .prefix = null, .infix = null, .precedence = .none },
-    .less_equal = .{ .prefix = null, .infix = null, .precedence = .none },
+    .equal_equal = .{ .prefix = null, .infix = binary, .precedence = .equality },
+    .greater = .{ .prefix = null, .infix = binary, .precedence = .comparison },
+    .greater_equal = .{ .prefix = null, .infix = binary, .precedence = .comparison },
+    .less = .{ .prefix = null, .infix = binary, .precedence = .comparison },
+    .less_equal = .{ .prefix = null, .infix = binary, .precedence = .comparison },
     .identifier = .{ .prefix = null, .infix = null, .precedence = .none },
     .string = .{ .prefix = null, .infix = null, .precedence = .none },
     .number = .{ .prefix = number, .infix = null, .precedence = .none },
     .and_ = .{ .prefix = null, .infix = null, .precedence = .none },
     .class = .{ .prefix = null, .infix = null, .precedence = .none },
     .else_ = .{ .prefix = null, .infix = null, .precedence = .none },
-    .false_ = .{ .prefix = null, .infix = null, .precedence = .none },
+    .false_ = .{ .prefix = literal, .infix = null, .precedence = .none },
     .for_ = .{ .prefix = null, .infix = null, .precedence = .none },
     .fun = .{ .prefix = null, .infix = null, .precedence = .none },
     .if_ = .{ .prefix = null, .infix = null, .precedence = .none },
-    .nil = .{ .prefix = null, .infix = null, .precedence = .none },
+    .nil = .{ .prefix = literal, .infix = null, .precedence = .none },
     .or_ = .{ .prefix = null, .infix = null, .precedence = .none },
     .print = .{ .prefix = null, .infix = null, .precedence = .none },
     .return_ = .{ .prefix = null, .infix = null, .precedence = .none },
     .super = .{ .prefix = null, .infix = null, .precedence = .none },
     .this = .{ .prefix = null, .infix = null, .precedence = .none },
-    .true_ = .{ .prefix = null, .infix = null, .precedence = .none },
+    .true_ = .{ .prefix = literal, .infix = null, .precedence = .none },
     .var_ = .{ .prefix = null, .infix = null, .precedence = .none },
     .while_ = .{ .prefix = null, .infix = null, .precedence = .none },
     .error_ = .{ .prefix = null, .infix = null, .precedence = .none },

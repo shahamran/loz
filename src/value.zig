@@ -2,7 +2,29 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 
-pub const Value = f64;
+pub const Value = union(enum) {
+    bool_: bool,
+    nil,
+    number: f64,
+
+    pub fn get_bool(self: *Value) ?bool {
+        switch (self.*) {
+            .bool_ => |b| return b,
+            else => return null,
+        }
+    }
+
+    pub fn get_number(self: *Value) ?f64 {
+        switch (self.*) {
+            .number => |n| return n,
+            else => return null,
+        }
+    }
+
+    pub fn is_nil(self: *Value) bool {
+        return self.* == .nil;
+    }
+};
 
 pub const ValueArray = struct {
     values: ArrayList(Value),
@@ -27,5 +49,9 @@ pub const ValueArray = struct {
 };
 
 pub fn print_value(val: Value) void {
-    std.debug.print("{d}", .{val});
+    switch (val) {
+        .bool_ => |b| std.debug.print("{s}", .{if (b) "true" else "false"}),
+        .nil => std.debug.print("nil", .{}),
+        .number => |n| std.debug.print("{d}", .{n}),
+    }
 }

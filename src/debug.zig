@@ -23,10 +23,17 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
     switch (code) {
         .op_constant => return constant_instruction("OP_CONSTANT", chunk, offset),
         .op_constant_long => return constant_long_instruction("OP_CONSTANT_LONG", chunk, offset),
+        .op_nil => return simple_instruction("OP_NIL", offset),
+        .op_true => return simple_instruction("OP_TRUE", offset),
+        .op_false => return simple_instruction("OP_FALSE", offset),
+        .op_equal => return simple_instruction("OP_EQUAL", offset),
+        .op_greater => return simple_instruction("OP_GREATER", offset),
+        .op_less => return simple_instruction("OP_LESS", offset),
         .op_add => return simple_instruction("OP_ADD", offset),
         .op_subtract => return simple_instruction("OP_SUBTRACT", offset),
         .op_multiply => return simple_instruction("OP_MULTIPLY", offset),
         .op_divide => return simple_instruction("OP_DIVIDE", offset),
+        .op_not => return simple_instruction("OP_NOT", offset),
         .op_negate => return simple_instruction("OP_NEGATE", offset),
         .op_return => return simple_instruction("OP_RETURN", offset),
     }
@@ -60,7 +67,7 @@ fn constant_long_instruction(name: []const u8, chunk: *const Chunk, offset: usiz
     return offset + 4;
 }
 
-fn get_line(chunk: *const Chunk, offset: usize) usize {
+pub fn get_line(chunk: *const Chunk, offset: usize) usize {
     // TODO: binary search
     for (chunk.lines.items, 0..) |line, i| {
         if (line.start > offset) {

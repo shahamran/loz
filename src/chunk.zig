@@ -70,10 +70,17 @@ pub const Chunk = struct {
 pub const OpCode = enum(u8) {
     op_constant,
     op_constant_long,
+    op_nil,
+    op_true,
+    op_false,
+    op_equal,
+    op_greater,
+    op_less,
     op_add,
     op_subtract,
     op_multiply,
     op_divide,
+    op_not,
     op_negate,
     op_return,
 };

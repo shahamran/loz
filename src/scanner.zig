@@ -148,7 +148,7 @@ fn identifier_type() TokenType {
 }
 
 fn check_keyword(start: usize, rest: []const u8, kind: TokenType) TokenType {
-    const current = scanner.source[start .. scanner.current];
+    const current = scanner.source[start..scanner.current];
     if (std.mem.eql(u8, current, rest)) return kind;
     return .identifier;
 }
