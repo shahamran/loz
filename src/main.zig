@@ -3,14 +3,12 @@ const debug = @import("debug.zig");
 const vm = @import("vm.zig");
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
+const config = @import("config");
+
+var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
+const allocator = gpa.allocator();
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer {
-        _ = gpa.deinit();
-    }
-
     vm.init_vm();
     defer vm.deinit_vm();
 
@@ -18,23 +16,23 @@ pub fn main() !void {
     defer std.process.argsFree(allocator, args);
 
     if (args.len == 1) {
-        try repl(allocator);
+        try repl();
     } else if (args.len == 2) {
-        try run_file(allocator, args.ptr[1]);
+        try run_file(args.ptr[1]);
     } else {
-        std.debug.print("Usage: loz [path]\n", .{});
+        std.debug.print("Usage: {s} [path]\n", .{args.ptr[0]});
         std.process.exit(64);
     }
 }
 
-fn repl(allocator: std.mem.Allocator) !void {
+fn repl() !void {
     var buf: [1024]u8 = undefined;
     const stdin = std.io.getStdIn().reader();
     const stdout = std.io.getStdOut().writer();
     while (true) {
         try stdout.print("> ", .{});
         if (try stdin.readUntilDelimiterOrEof(buf[0..], '\n')) |line| {
-            _ = try vm.interpret(allocator, line);
+            _ = try vm.interpret(line);
         } else {
             break;
         }
@@ -42,7 +40,7 @@ fn repl(allocator: std.mem.Allocator) !void {
     try stdout.print("\n", .{});
 }
 
-fn run_file(allocator: std.mem.Allocator, path: []const u8) !void {
+fn run_file(path: []const u8) !void {
     const file = std.fs.cwd().openFile(path, .{}) catch {
         std.debug.print("Could not open file \"{s}\".\n", .{path});
         std.process.exit(74);
@@ -56,7 +54,7 @@ fn run_file(allocator: std.mem.Allocator, path: []const u8) !void {
     };
     defer allocator.free(source);
 
-    switch (try vm.interpret(allocator, source)) {
+    switch (try vm.interpret(source)) {
         .ok => {},
         .compile_error => std.process.exit(65),
         .runtime_error => std.process.exit(70),

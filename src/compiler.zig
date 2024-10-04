@@ -4,24 +4,21 @@ const scanner = @import("scanner.zig");
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
-
-const DEBUG_PRINT_CODE = false;
+const config = @import("config");
 
 const Parser = struct {
     current: scanner.Token,
     previous: scanner.Token,
     had_error: bool,
     panic_mode: bool,
-    allocator: Allocator,
 };
 
 var parser: Parser = undefined;
 var compiling_chunk: *Chunk = undefined;
 
-pub fn compile(allocator: Allocator, source: []const u8, chunk: *Chunk) !bool {
+pub fn compile(source: []const u8, chunk: *Chunk) !bool {
     defer end_compiler();
     scanner.init_scanner(source);
-    parser.allocator = allocator;
     compiling_chunk = chunk;
     parser.had_error = false;
     parser.panic_mode = false;
@@ -199,7 +196,7 @@ fn error_at(token: *scanner.Token, message: []const u8) void {
 
 fn end_compiler() void {
     emit_return() catch unreachable;
-    if (DEBUG_PRINT_CODE) {
+    if (config.print_code) {
         if (!parser.had_error) {
             @import("debug.zig").disassemble_chunk(current_chunk(), "code");
         }

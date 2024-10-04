@@ -6,7 +6,7 @@ const print_value = @import("value.zig").print_value;
 pub fn disassemble_chunk(chunk: *const Chunk, name: []const u8) void {
     std.debug.print("== {s} ==\n", .{name});
     var offset: usize = 0;
-    while (offset < chunk.size) {
+    while (offset < chunk.code.items.len) {
         offset = disassemble_instruction(chunk, offset);
     }
 }
@@ -19,7 +19,7 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
     } else {
         std.debug.print("{d: >4} ", .{line});
     }
-    const code: OpCode = @enumFromInt(chunk.code[offset]);
+    const code: OpCode = @enumFromInt(chunk.code.items[offset]);
     switch (code) {
         .op_constant => return constant_instruction("OP_CONSTANT", chunk, offset),
         .op_constant_long => return constant_long_instruction("OP_CONSTANT_LONG", chunk, offset),
@@ -47,22 +47,22 @@ fn simple_instruction(name: []const u8, offset: usize) usize {
 }
 
 fn constant_instruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
-    const constant = chunk.code[offset + 1];
+    const constant = chunk.code.items[offset + 1];
     std.debug.print("{s: <16} {d: >4} '", .{ name, constant });
-    print_value(chunk.constants.values.items[constant]);
+    print_value(chunk.constants.items[constant]);
     std.debug.print("'\n", .{});
     return offset + 2;
 }
 
 fn constant_long_instruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
     const bytes = .{
-        @as(usize, chunk.code[offset + 1]),
-        @as(usize, chunk.code[offset + 2]),
-        @as(usize, chunk.code[offset + 3]),
+        @as(usize, chunk.code.items[offset + 1]),
+        @as(usize, chunk.code.items[offset + 2]),
+        @as(usize, chunk.code.items[offset + 3]),
     };
     const constant = bytes[0] | (bytes[1] << 8) | (bytes[2] << 16);
     std.debug.print("{s: <16} {d: >4} '", .{ name, constant });
-    print_value(chunk.constants.values.items[constant]);
+    print_value(chunk.constants.items[constant]);
     std.debug.print("'\n", .{});
     return offset + 4;
 }
@@ -74,5 +74,5 @@ pub fn get_line(chunk: *const Chunk, offset: usize) usize {
             return chunk.lines.items[i - 1].line;
         }
     }
-    return chunk.lines.getLast().line;
+    return chunk.lines.last().line;
 }

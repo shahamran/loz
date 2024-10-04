@@ -1,13 +1,11 @@
 const std = @import("std");
-const Allocator = @import("std").mem.Allocator;
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
 const compiler = @import("compiler.zig");
 const print_value = @import("value.zig").print_value;
 const get_line = @import("debug.zig").get_line;
-
-const DEBUG_TRACE_EXECUTION = false;
+const config = @import("config");
 
 var vm: VM = undefined;
 
@@ -20,15 +18,15 @@ const VM = struct {
     stack_top: [*]Value,
 };
 
-pub fn interpret(allocator: Allocator, source: []const u8) Allocator.Error!InterpretResult {
-    var chunk = Chunk.init(allocator);
+pub fn interpret(source: []const u8) !InterpretResult {
+    var chunk = Chunk.init();
     defer chunk.deinit();
 
-    if (!try compiler.compile(allocator, source, &chunk)) {
+    if (!try compiler.compile(source, &chunk)) {
         return .compile_error;
     }
     vm.chunk = &chunk;
-    vm.ip = vm.chunk.code.ptr;
+    vm.ip = vm.chunk.code.items.ptr;
     return try run();
 }
 
@@ -38,9 +36,9 @@ pub fn init_vm() void {
 
 pub fn deinit_vm() void {}
 
-fn run() Allocator.Error!InterpretResult {
+fn run() !InterpretResult {
     while (true) {
-        if (comptime DEBUG_TRACE_EXECUTION) {
+        if (comptime config.trace_execution) {
             std.debug.print("          ", .{});
             var slot: [*]Value = &vm.stack;
             while (slot != vm.stack_top) : (slot += 1) {
@@ -49,7 +47,8 @@ fn run() Allocator.Error!InterpretResult {
                 std.debug.print(" ]", .{});
             }
             std.debug.print("\n", .{});
-            _ = @import("debug.zig").disassemble_instruction(vm.chunk, vm.ip - vm.chunk.code.ptr);
+            _ = @import("debug.zig")
+                .disassemble_instruction(vm.chunk, vm.ip - vm.chunk.code.items.ptr);
         }
         const instruction: OpCode = @enumFromInt(read_byte());
         switch (instruction) {
@@ -161,7 +160,7 @@ fn less(a: f64, b: f64) bool {
 fn runtime_error(comptime fmt: []const u8, args: anytype) void {
     std.debug.print(fmt, args);
     std.debug.print("\n", .{});
-    const instruction = vm.ip - vm.chunk.code.ptr - 1;
+    const instruction = vm.ip - vm.chunk.code.items.ptr - 1;
     const line = get_line(vm.chunk, instruction);
     std.debug.print("[line {d}] in script \n", .{line});
     reset_stack();
@@ -174,14 +173,14 @@ fn read_byte() u8 {
 }
 
 fn read_constant() Value {
-    return vm.chunk.constants.values.items[read_byte()];
+    return vm.chunk.constants.items[read_byte()];
 }
 
 fn read_constant_long() Value {
     var index = @as(usize, read_byte());
     index = index | (@as(usize, read_byte()) << 8);
     index = index | (@as(usize, read_byte()) << 16);
-    return vm.chunk.constants.values.items[index];
+    return vm.chunk.constants.items[index];
 }
 
 pub const InterpretResult = enum {
