@@ -62,3 +62,7 @@ fn run_file(allocator: std.mem.Allocator, path: []const u8) !void {
         .runtime_error => std.process.exit(70),
     }
 }
+
+test {
+    std.testing.refAllDecls(@This());
+}
