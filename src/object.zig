@@ -21,8 +21,8 @@ pub const Obj = struct {
             return false;
         }
         switch (self.kind) {
-            .string => return self.downcast_string().value.chars
-                .eql(&other.downcast_string().value.chars),
+            // strings are interned, so we can compare them by pointer
+            .string => return self == other,
         }
     }
 };
@@ -36,14 +36,19 @@ pub const ObjString = struct {
     hash: u32,
 
     pub fn copy(chars: []const u8) !*Self {
-        return try take(try String.init_from(chars));
+        const hash = hash_string(chars);
+        if (vm.vm.strings.find_key(chars, hash)) |interned| return interned;
+        return try allocate(try String.init_from(chars), hash);
     }
 
-    pub fn take(string: String) !*Self {
-        var s = try allocate_object(Self);
-        s.value = string;
-        s.hash = hash_string(string.chars.items);
-        return s;
+    pub fn take(string: *String) !*Self {
+        const chars = string.chars.items;
+        const hash = hash_string(chars);
+        if (vm.vm.strings.find_key(chars, hash)) |interned| {
+            string.deinit();
+            return interned;
+        }
+        return try allocate(string.*, hash);
     }
 
     pub fn deinit(self: *Self) void {
@@ -54,6 +59,15 @@ pub const ObjString = struct {
 
     pub inline fn upcast(self: *Self) *Obj {
         return &self.obj;
+    }
+
+    fn allocate(string: String, hash: u32) !*Self {
+        const s = try allocate_object(Self);
+        s.value = string;
+        s.hash = hash;
+        const is_new = try vm.vm.strings.insert(s, .nil);
+        std.debug.assert(is_new);
+        return s;
     }
 };
 

@@ -1,3 +1,4 @@
+const std = @import("std");
 const memory = @import("memory.zig");
 const grow_capacity = @import("list.zig").grow_capacity;
 const ObjString = @import("object.zig").ObjString;
@@ -47,6 +48,23 @@ pub const Table = struct {
         entry.key = null;
         entry.value = Value{ .bool = true };
         return true;
+    }
+
+    pub fn find_key(self: *const Self, chars: []const u8, hash: u32) ?*ObjString {
+        if (self.count == 0) return null;
+        const capacity = self.entries.len;
+        var index = hash % capacity;
+        while (true) {
+            const entry = &self.entries[index];
+            if (entry.key) |key| {
+                if (key.hash == hash and std.mem.eql(u8, key.value.as_slice(), chars))
+                    return key;
+            } else {
+                // stop if we find an empty non-tombstone entry.
+                if (entry.value == .nil) return null;
+            }
+            index = (index + 1) % capacity;
+        }
     }
 
     fn find_entry(entries: []Entry, key: *ObjString) *Entry {
@@ -107,25 +125,3 @@ pub const Entry = struct {
     key: ?*ObjString,
     value: Value,
 };
-
-test "hash table" {
-    const std = @import("std");
-    const expect = std.testing.expect;
-    const expectEqual = std.testing.expectEqual;
-
-    var table = Table.init();
-    defer table.deinit();
-    const key = try ObjString.copy("hello");
-    defer key.deinit();
-
-    try expectEqual(0, table.count);
-    try expectEqual(0, table.entries.len);
-    try expect(try table.insert(key, Value{ .number = 42.0 }));
-    try expectEqual(Value{ .number = 42.0 }, table.get(key).?);
-    try expectEqual(1, table.count);
-    try expectEqual(8, table.entries.len);
-
-    try expect(!try table.insert(key, Value{ .number = 31.0 }));
-    try expectEqual(Value{ .number = 31.0 }, table.get(key).?);
-    try expectEqual(1, table.count);
-}

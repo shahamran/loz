@@ -6,11 +6,11 @@ const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
 const Obj = @import("object.zig").Obj;
 const ObjString = @import("object.zig").ObjString;
+const Table = @import("table.zig").Table;
 const compiler = @import("compiler.zig");
 const print_value = @import("value.zig").print_value;
 const get_line = @import("debug.zig").get_line;
 const memory = @import("memory.zig");
-const table = @import("table.zig");
 
 pub var vm: VM = undefined;
 
@@ -22,7 +22,7 @@ const VM = struct {
     stack: [STACK_MAX]Value,
     stack_top: [*]Value,
     objects: ?*Obj, // linked list of all allocated objects
-    strings: table.Table,
+    strings: Table,
 };
 
 pub fn interpret(source: []const u8) !InterpretResult {
@@ -40,10 +40,12 @@ pub fn interpret(source: []const u8) !InterpretResult {
 pub fn init_vm() void {
     reset_stack();
     vm.objects = null;
+    vm.strings = Table.init();
 }
 
 pub fn deinit_vm() void {
     memory.free_objects();
+    vm.strings.deinit();
 }
 
 fn run() !InterpretResult {
@@ -84,7 +86,7 @@ fn run() !InterpretResult {
                     const a = pop().obj.downcast_string();
                     var result = try a.value.clone();
                     try result.append(b.value.as_slice());
-                    const obj = try ObjString.take(result);
+                    const obj = try ObjString.take(&result);
                     push(Value{ .obj = obj.upcast() });
                 } else if (peek(0) == .number and peek(1) == .number) {
                     const b = pop().number;
