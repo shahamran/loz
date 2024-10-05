@@ -22,6 +22,7 @@ const VM = struct {
     stack: [STACK_MAX]Value,
     stack_top: [*]Value,
     objects: ?*Obj, // linked list of all allocated objects
+    globals: Table,
     strings: Table,
 };
 
@@ -40,11 +41,13 @@ pub fn interpret(source: []const u8) !InterpretResult {
 pub fn init_vm() void {
     reset_stack();
     vm.objects = null;
+    vm.globals = Table.init();
     vm.strings = Table.init();
 }
 
 pub fn deinit_vm() void {
     memory.free_objects();
+    vm.globals.deinit();
     vm.strings.deinit();
 }
 
@@ -75,6 +78,21 @@ fn run() !InterpretResult {
             .op_nil => push(Value{ .nil = {} }),
             .op_true => push(Value{ .bool_ = true }),
             .op_false => push(Value{ .bool_ = false }),
+            .op_pop => _ = pop(),
+            .op_get_global => {
+                const name = read_constant().obj.downcast_string();
+                if (vm.globals.get(name)) |value| {
+                    push(value);
+                } else {
+                    runtime_error("Undefined variable '{s}'.", .{name.value.as_slice()});
+                    return .runtime_error;
+                }
+            },
+            .op_define_global => {
+                const name = read_constant().obj.downcast_string();
+                _ = try vm.globals.insert(name, peek(0));
+                _ = pop();
+            },
             .op_equal => {
                 const b = pop();
                 const a = pop();

@@ -61,19 +61,43 @@ const ParseRule = struct {
 };
 
 fn declaration() !void {
-    try statement();
+    if (match(.var_)) {
+        try var_declaration();
+    } else {
+        try statement();
+    }
+    if (parser.panic_mode) synchronize();
+}
+
+fn var_declaration() !void {
+    const global = try parse_variable("Expected variable name.");
+    if (match(.equal)) {
+        try expression();
+    } else {
+        try emit_byte(op_u8(.op_nil));
+    }
+    consume(.semicolon, "Expected ';' after variable declaration.");
+    try define_variable(global);
 }
 
 fn statement() !void {
     if (match(.print)) {
         try print_statement();
+    } else {
+        try expression_statement();
     }
 }
 
 fn print_statement() !void {
     try expression();
     consume(.semicolon, "Expected ';' after value.");
-    try emit_byte(@intFromEnum(OpCode.op_print));
+    try emit_byte(op_u8(.op_print));
+}
+
+fn expression_statement() !void {
+    try expression();
+    consume(.semicolon, "Expected ';' after expression.");
+    try emit_byte(op_u8(.op_pop));
 }
 
 fn expression() Allocator.Error!void {
@@ -96,6 +120,20 @@ fn parse_precedence(precedence: Precedence) Allocator.Error!void {
     }
 }
 
+fn define_variable(global: u8) !void {
+    try emit_two(op_u8(.op_define_global), global);
+}
+
+fn parse_variable(error_message: []const u8) !u8 {
+    consume(.identifier, error_message);
+    return try identifier_constant(&parser.previous);
+}
+
+fn identifier_constant(name: *const scanner.Token) !u8 {
+    const ident = try object.ObjString.copy(name.text);
+    return @intCast(try make_constant(Value{ .obj = ident.upcast() }));
+}
+
 fn number() Allocator.Error!void {
     const value = std.fmt.parseFloat(f64, parser.previous.text) catch unreachable;
     try emit_constant(Value{ .number = value });
@@ -103,9 +141,9 @@ fn number() Allocator.Error!void {
 
 fn literal() Allocator.Error!void {
     switch (parser.previous.kind) {
-        .false_ => try emit_byte(@intFromEnum(OpCode.op_false)),
-        .true_ => try emit_byte(@intFromEnum(OpCode.op_true)),
-        .nil => try emit_byte(@intFromEnum(OpCode.op_nil)),
+        .false_ => try emit_byte(op_u8(.op_false)),
+        .true_ => try emit_byte(op_u8(.op_true)),
+        .nil => try emit_byte(op_u8(.op_nil)),
         else => unreachable,
     }
 }
@@ -115,6 +153,15 @@ fn string() !void {
     const chars = parser.previous.text[1..end]; // remove the quotes
     const s = try object.ObjString.copy(chars);
     try emit_constant(.{ .obj = s.upcast() });
+}
+
+fn variable() !void {
+    try named_variable(parser.previous);
+}
+
+fn named_variable(name: scanner.Token) !void {
+    const arg = try identifier_constant(&name);
+    try emit_two(op_u8(.op_get_global), arg);
 }
 
 fn grouping() Allocator.Error!void {
@@ -128,8 +175,8 @@ fn unary() Allocator.Error!void {
     try parse_precedence(.unary);
     // emit the operator instruction.
     try switch (op_kind) {
-        .bang => emit_byte(@intFromEnum(OpCode.op_not)),
-        .minus => emit_byte(@intFromEnum(OpCode.op_negate)),
+        .bang => emit_byte(op_u8(.op_not)),
+        .minus => emit_byte(op_u8(.op_negate)),
         else => unreachable,
     };
 }
@@ -139,16 +186,16 @@ fn binary() Allocator.Error!void {
     const rule = rules.get(op_kind);
     try parse_precedence(rule.precedence.higher());
     try switch (op_kind) {
-        .bang_equal => emit_two(@intFromEnum(OpCode.op_equal), @intFromEnum(OpCode.op_not)),
-        .equal_equal => emit_byte(@intFromEnum(OpCode.op_equal)),
-        .greater => emit_byte(@intFromEnum(OpCode.op_greater)),
-        .greater_equal => emit_two(@intFromEnum(OpCode.op_less), @intFromEnum(OpCode.op_not)),
-        .less => emit_byte(@intFromEnum(OpCode.op_less)),
-        .less_equal => emit_two(@intFromEnum(OpCode.op_greater), @intFromEnum(OpCode.op_not)),
-        .plus => emit_byte(@intFromEnum(OpCode.op_add)),
-        .minus => emit_byte(@intFromEnum(OpCode.op_subtract)),
-        .star => emit_byte(@intFromEnum(OpCode.op_multiply)),
-        .slash => emit_byte(@intFromEnum(OpCode.op_divide)),
+        .bang_equal => emit_two(op_u8(.op_equal), op_u8(.op_not)),
+        .equal_equal => emit_byte(op_u8(.op_equal)),
+        .greater => emit_byte(op_u8(.op_greater)),
+        .greater_equal => emit_two(op_u8(.op_less), op_u8(.op_not)),
+        .less => emit_byte(op_u8(.op_less)),
+        .less_equal => emit_two(op_u8(.op_greater), op_u8(.op_not)),
+        .plus => emit_byte(op_u8(.op_add)),
+        .minus => emit_byte(op_u8(.op_subtract)),
+        .star => emit_byte(op_u8(.op_multiply)),
+        .slash => emit_byte(op_u8(.op_divide)),
         else => unreachable,
     };
 }
@@ -187,7 +234,7 @@ fn emit_byte(byte: u8) Allocator.Error!void {
 }
 
 fn emit_return() !void {
-    try emit_byte(@intFromEnum(OpCode.op_return));
+    try emit_byte(op_u8(.op_return));
 }
 
 fn emit_two(byte1: u8, byte2: u8) !void {
@@ -196,13 +243,29 @@ fn emit_two(byte1: u8, byte2: u8) !void {
 }
 
 fn emit_constant(value: Value) !void {
-    const constant = try current_chunk().add_constant(value);
+    const constant = try make_constant(value);
     if (constant > std.math.maxInt(u8)) {
         // TODO: use op_constan_long instead.
         error_("Too many constants in one chunk.");
         return;
     }
-    try emit_two(@intFromEnum(OpCode.op_constant), @intCast(constant));
+    try emit_two(op_u8(.op_constant), @intCast(constant));
+}
+
+inline fn make_constant(value: Value) !usize {
+    return try current_chunk().add_constant(value);
+}
+
+fn synchronize() void {
+    parser.panic_mode = false;
+    while (parser.current.kind != .eof) {
+        if (parser.previous.kind == .semicolon) return;
+        switch (parser.current.kind) {
+            .class, .fun, .var_, .for_, .if_, .while_, .print, .return_ => return,
+            else => {}, // Do nothing.
+        }
+        advance();
+    }
 }
 
 fn error_(message: []const u8) void {
@@ -242,6 +305,10 @@ fn current_chunk() *Chunk {
     return compiling_chunk;
 }
 
+inline fn op_u8(op: OpCode) u8 {
+    return @intFromEnum(op);
+}
+
 const rules = std.EnumArray(scanner.TokenType, ParseRule).init(.{
     .left_paren = .{ .prefix = grouping, .infix = null, .precedence = .none },
     .right_paren = .{ .prefix = null, .infix = null, .precedence = .none },
@@ -262,7 +329,7 @@ const rules = std.EnumArray(scanner.TokenType, ParseRule).init(.{
     .greater_equal = .{ .prefix = null, .infix = binary, .precedence = .comparison },
     .less = .{ .prefix = null, .infix = binary, .precedence = .comparison },
     .less_equal = .{ .prefix = null, .infix = binary, .precedence = .comparison },
-    .identifier = .{ .prefix = null, .infix = null, .precedence = .none },
+    .identifier = .{ .prefix = variable, .infix = null, .precedence = .none },
     .string = .{ .prefix = string, .infix = null, .precedence = .none },
     .number = .{ .prefix = number, .infix = null, .precedence = .none },
     .and_ = .{ .prefix = null, .infix = null, .precedence = .none },
