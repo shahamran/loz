@@ -1,4 +1,6 @@
 const std = @import("std");
+const config = @import("config");
+
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
@@ -8,7 +10,7 @@ const compiler = @import("compiler.zig");
 const print_value = @import("value.zig").print_value;
 const get_line = @import("debug.zig").get_line;
 const memory = @import("memory.zig");
-const config = @import("config");
+const table = @import("table.zig");
 
 pub var vm: VM = undefined;
 
@@ -20,6 +22,7 @@ const VM = struct {
     stack: [STACK_MAX]Value,
     stack_top: [*]Value,
     objects: ?*Obj, // linked list of all allocated objects
+    strings: table.Table,
 };
 
 pub fn interpret(source: []const u8) !InterpretResult {

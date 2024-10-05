@@ -96,7 +96,7 @@ fn literal() Allocator.Error!void {
 fn string() !void {
     const end = parser.previous.text.len - 1;
     const chars = parser.previous.text[1..end]; // remove the quotes
-    const s = try object.ObjString.init(chars);
+    const s = try object.ObjString.copy(chars);
     try emit_constant(.{ .obj = s.upcast() });
 }
 

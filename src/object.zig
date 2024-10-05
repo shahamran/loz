@@ -33,16 +33,16 @@ pub const ObjString = struct {
 
     obj: Obj,
     value: String,
+    hash: u32,
 
-    pub fn init(chars: []const u8) !*Self {
-        var s = try allocate_object(Self);
-        s.value = try String.init_from(chars);
-        return s;
+    pub fn copy(chars: []const u8) !*Self {
+        return try take(try String.init_from(chars));
     }
 
     pub fn take(string: String) !*Self {
-        var s = try init("");
+        var s = try allocate_object(Self);
         s.value = string;
+        s.hash = hash_string(string.chars.items);
         return s;
     }
 
@@ -69,4 +69,13 @@ fn allocate_object(comptime T: type) !*T {
     ptr.obj = .{ .kind = T.obj_kind, .next = vm.vm.objects };
     vm.vm.objects = ptr.upcast();
     return ptr;
+}
+
+fn hash_string(chars: []const u8) u32 {
+    var hash: u32 = 2166136261;
+    for (chars) |char| {
+        hash ^= @intCast(char);
+        hash *%= 16777619;
+    }
+    return hash;
 }

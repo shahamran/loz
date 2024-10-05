@@ -23,13 +23,7 @@ pub fn List(comptime T: type) type {
         /// Make sure the list has enough capacity to store a total of `capacity` items.
         pub fn reserve(self: *Self, capacity: usize) !void {
             if (capacity <= self.capacity) return;
-            var new_capacity: usize = undefined;
-            if (capacity <= 8) {
-                new_capacity = 8;
-            } else {
-                // assuming we'll run out of memory before we hit usize.max
-                new_capacity = std.math.ceilPowerOfTwo(usize, capacity) catch unreachable;
-            }
+            const new_capacity = if (capacity == 8) 8 else grow_capacity(capacity);
             const old_len = self.items.len;
             const new_items = try memory.reallocate(self.allocated_slice(), new_capacity);
             self.capacity = new_items.len;
@@ -67,6 +61,14 @@ pub fn List(comptime T: type) type {
             return self.items.ptr[0..self.capacity];
         }
     };
+}
+
+pub fn grow_capacity(capacity: usize) usize {
+    return if (capacity < 8)
+        8
+    else
+        // assuming we'll run out of memory before we hit usize.max
+        std.math.ceilPowerOfTwo(usize, capacity) catch unreachable;
 }
 
 test "list" {
