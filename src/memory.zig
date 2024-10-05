@@ -1,13 +1,11 @@
 const std = @import("std");
-const builtin = @import("builtin");
+const allocator = @import("main.zig").allocator;
+const vm = @import("vm.zig");
 const Error = error{OutOfMemory};
 
 pub fn grow_capacity(capacity: usize) usize {
     return if (capacity < 8) 8 else capacity * 2;
 }
-
-var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
-const allocator = if (builtin.is_test) std.testing.allocator else gpa.allocator();
 
 pub fn reallocate(old_mem: anytype, new_n: usize) t: {
     const Slice = @typeInfo(@TypeOf(old_mem)).pointer;
@@ -18,4 +16,15 @@ pub fn reallocate(old_mem: anytype, new_n: usize) t: {
 
 pub fn free(memory: anytype) void {
     _ = reallocate(memory, 0) catch unreachable;
+}
+
+pub fn free_objects() void {
+    var object = vm.vm.objects;
+    while (object) |o| {
+        const next = o.next;
+        switch (o.kind) {
+            .string => o.downcast_string().deinit(),
+        }
+        object = next;
+    }
 }

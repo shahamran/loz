@@ -5,6 +5,7 @@ const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
 const config = @import("config");
+const object = @import("object.zig");
 
 const Parser = struct {
     current: scanner.Token,
@@ -90,6 +91,13 @@ fn literal() Allocator.Error!void {
         .nil => try emit_byte(@intFromEnum(OpCode.op_nil)),
         else => unreachable,
     }
+}
+
+fn string() !void {
+    const end = parser.previous.text.len - 1;
+    const chars = parser.previous.text[1..end]; // remove the quotes
+    const s = try object.ObjString.init(chars);
+    try emit_constant(.{ .obj = s.upcast() });
 }
 
 fn grouping() Allocator.Error!void {
@@ -228,7 +236,7 @@ const rules = std.EnumArray(scanner.TokenType, ParseRule).init(.{
     .less = .{ .prefix = null, .infix = binary, .precedence = .comparison },
     .less_equal = .{ .prefix = null, .infix = binary, .precedence = .comparison },
     .identifier = .{ .prefix = null, .infix = null, .precedence = .none },
-    .string = .{ .prefix = null, .infix = null, .precedence = .none },
+    .string = .{ .prefix = string, .infix = null, .precedence = .none },
     .number = .{ .prefix = number, .infix = null, .precedence = .none },
     .and_ = .{ .prefix = null, .infix = null, .precedence = .none },
     .class = .{ .prefix = null, .infix = null, .precedence = .none },

@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const debug = @import("debug.zig");
 const vm = @import("vm.zig");
 const Chunk = @import("chunk.zig").Chunk;
@@ -6,9 +7,10 @@ const OpCode = @import("chunk.zig").OpCode;
 const config = @import("config");
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
-const allocator = gpa.allocator();
+pub const allocator = if (builtin.is_test) std.testing.allocator else gpa.allocator();
 
 pub fn main() !void {
+    defer std.debug.assert(gpa.deinit() == .ok);
     vm.init_vm();
     defer vm.deinit_vm();
 

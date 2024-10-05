@@ -1,15 +1,6 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
-    const exe = b.addExecutable(.{
-        .name = "loz",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
     const print_code = b.option(
         bool,
         "print_code",
@@ -23,6 +14,15 @@ pub fn build(b: *std.Build) void {
     const options = b.addOptions();
     options.addOption(bool, "print_code", print_code);
     options.addOption(bool, "trace_execution", trace_execution);
+
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+    const exe = b.addExecutable(.{
+        .name = "loz",
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     exe.root_module.addOptions("config", options);
 
     b.installArtifact(exe);
@@ -39,6 +39,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    exe_unit_tests.root_module.addOptions("config", options);
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);

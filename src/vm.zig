@@ -2,12 +2,15 @@ const std = @import("std");
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
+const Obj = @import("object.zig").Obj;
+const ObjString = @import("object.zig").ObjString;
 const compiler = @import("compiler.zig");
 const print_value = @import("value.zig").print_value;
 const get_line = @import("debug.zig").get_line;
+const memory = @import("memory.zig");
 const config = @import("config");
 
-var vm: VM = undefined;
+pub var vm: VM = undefined;
 
 const VM = struct {
     const STACK_MAX = 256;
@@ -16,6 +19,7 @@ const VM = struct {
     ip: [*]u8,
     stack: [STACK_MAX]Value,
     stack_top: [*]Value,
+    objects: ?*Obj, // linked list of all allocated objects
 };
 
 pub fn interpret(source: []const u8) !InterpretResult {
@@ -32,9 +36,12 @@ pub fn interpret(source: []const u8) !InterpretResult {
 
 pub fn init_vm() void {
     reset_stack();
+    vm.objects = null;
 }
 
-pub fn deinit_vm() void {}
+pub fn deinit_vm() void {
+    memory.free_objects();
+}
 
 fn run() !InterpretResult {
     while (true) {
@@ -66,9 +73,25 @@ fn run() !InterpretResult {
             .op_equal => {
                 const b = pop();
                 const a = pop();
-                push(Value{ .bool_ = std.meta.eql(a, b) });
+                push(Value{ .bool_ = a.eql(b) });
             },
-            .op_add => binary_op(f64, add) orelse return .runtime_error,
+            .op_add => {
+                if (peek(0).is_string() and peek(1).is_string()) {
+                    const b = pop().obj.downcast_string();
+                    const a = pop().obj.downcast_string();
+                    var result = try a.value.clone();
+                    try result.append(b.value.as_slice());
+                    const obj = try ObjString.take(result);
+                    push(Value{ .obj = obj.upcast() });
+                } else if (peek(0) == .number and peek(1) == .number) {
+                    const b = pop().number;
+                    const a = pop().number;
+                    push(Value{ .number = a + b });
+                } else {
+                    runtime_error("Operands must be two numbers or two strings.", .{});
+                    return .runtime_error;
+                }
+            },
             .op_subtract => binary_op(f64, subtract) orelse return .runtime_error,
             .op_multiply => binary_op(f64, multiply) orelse return .runtime_error,
             .op_divide => binary_op(f64, divide) orelse return .runtime_error,
@@ -131,10 +154,6 @@ fn binary_op(comptime Ret: type, fun: *const fn (f64, f64) Ret) ?void {
         Value{ .bool_ = fun(a, b) }
     else
         Value{ .number = fun(a, b) });
-}
-
-fn add(a: f64, b: f64) f64 {
-    return a + b;
 }
 
 fn subtract(a: f64, b: f64) f64 {
