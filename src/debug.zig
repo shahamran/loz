@@ -35,6 +35,7 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
         .op_divide => return simple_instruction("OP_DIVIDE", offset),
         .op_not => return simple_instruction("OP_NOT", offset),
         .op_negate => return simple_instruction("OP_NEGATE", offset),
+        .op_print => return simple_instruction("OP_PRINT", offset),
         .op_return => return simple_instruction("OP_RETURN", offset),
     }
     std.debug.print("Unknown opcode {}\n", .{chunk.code[offset]});

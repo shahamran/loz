@@ -113,10 +113,12 @@ fn run() !InterpretResult {
                 }
                 push(Value{ .number = -pop().number });
             },
-            .op_return => {
+            .op_print => {
                 print_value(pop());
                 std.debug.print("\n", .{});
-                return InterpretResult.ok;
+            },
+            .op_return => {
+                return .ok;
             },
         }
     }

@@ -24,8 +24,9 @@ pub fn compile(source: []const u8, chunk: *Chunk) !bool {
     parser.had_error = false;
     parser.panic_mode = false;
     advance();
-    try expression();
-    consume(.eof, "Expected end of expression.");
+    while (!match(.eof)) {
+        try declaration();
+    }
     return !parser.had_error;
 }
 
@@ -58,6 +59,22 @@ const ParseRule = struct {
     infix: ?*const fn () Allocator.Error!void,
     precedence: Precedence,
 };
+
+fn declaration() !void {
+    try statement();
+}
+
+fn statement() !void {
+    if (match(.print)) {
+        try print_statement();
+    }
+}
+
+fn print_statement() !void {
+    try expression();
+    consume(.semicolon, "Expected ';' after value.");
+    try emit_byte(@intFromEnum(OpCode.op_print));
+}
 
 fn expression() Allocator.Error!void {
     try parse_precedence(.assignment);
@@ -153,6 +170,16 @@ fn consume(kind: scanner.TokenType, message: []const u8) void {
         return;
     }
     error_at_current(message);
+}
+
+fn match(kind: scanner.TokenType) bool {
+    if (!check(kind)) return false;
+    advance();
+    return true;
+}
+
+fn check(kind: scanner.TokenType) bool {
+    return parser.current.kind == kind;
 }
 
 fn emit_byte(byte: u8) Allocator.Error!void {
