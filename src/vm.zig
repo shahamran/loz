@@ -93,6 +93,15 @@ fn run() !InterpretResult {
                 _ = try vm.globals.insert(name, peek(0));
                 _ = pop();
             },
+            .op_set_global => {
+                const name = read_constant().obj.downcast_string();
+                const new_key = try vm.globals.insert(name, peek(0));
+                if (new_key) {
+                    _ = vm.globals.delete(name);
+                    runtime_error("Undefined variable '{s}'.", .{name.value.as_slice()});
+                    return .runtime_error;
+                }
+            },
             .op_equal => {
                 const b = pop();
                 const a = pop();

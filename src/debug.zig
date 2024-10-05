@@ -29,6 +29,7 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
         .op_pop => return simple_instruction("OP_POP", offset),
         .op_get_global => return constant_instruction("OP_GET_GLOBAL", chunk, offset),
         .op_define_global => return constant_instruction("OP_DEFINE_GLOBAL", chunk, offset),
+        .op_set_global => return constant_instruction("OP_SET_GLOBAL", chunk, offset),
         .op_equal => return simple_instruction("OP_EQUAL", offset),
         .op_greater => return simple_instruction("OP_GREATER", offset),
         .op_less => return simple_instruction("OP_LESS", offset),

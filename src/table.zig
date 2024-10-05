@@ -46,7 +46,7 @@ pub const Table = struct {
         if (entry.key == null) return false;
         // Tombstone
         entry.key = null;
-        entry.value = Value{ .bool = true };
+        entry.value = Value{ .bool_ = true };
         return true;
     }
 

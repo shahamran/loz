@@ -55,8 +55,8 @@ const Precedence = enum {
 };
 
 const ParseRule = struct {
-    prefix: ?*const fn () Allocator.Error!void,
-    infix: ?*const fn () Allocator.Error!void,
+    prefix: ?*const fn (bool) Allocator.Error!void,
+    infix: ?*const fn (bool) Allocator.Error!void,
     precedence: Precedence,
 };
 
@@ -110,13 +110,17 @@ fn parse_precedence(precedence: Precedence) Allocator.Error!void {
         error_("Expected expression.");
         return;
     };
-    try prefix_rule();
+    const can_assign = precedence.int() <= Precedence.assignment.int();
+    try prefix_rule(can_assign);
     while (precedence.int() <= rules.get(parser.current.kind).precedence.int()) {
         advance();
         const infix_rule = rules.get(parser.previous.kind).infix orelse {
             unreachable;
         };
-        try infix_rule();
+        try infix_rule(can_assign);
+    }
+    if (can_assign and match(.equal)) {
+        error_("Invalid assignment target.");
     }
 }
 
@@ -134,12 +138,14 @@ fn identifier_constant(name: *const scanner.Token) !u8 {
     return @intCast(try make_constant(Value{ .obj = ident.upcast() }));
 }
 
-fn number() Allocator.Error!void {
+fn number(can_assign: bool) Allocator.Error!void {
+    _ = can_assign;
     const value = std.fmt.parseFloat(f64, parser.previous.text) catch unreachable;
     try emit_constant(Value{ .number = value });
 }
 
-fn literal() Allocator.Error!void {
+fn literal(can_assign: bool) Allocator.Error!void {
+    _ = can_assign;
     switch (parser.previous.kind) {
         .false_ => try emit_byte(op_u8(.op_false)),
         .true_ => try emit_byte(op_u8(.op_true)),
@@ -148,28 +154,36 @@ fn literal() Allocator.Error!void {
     }
 }
 
-fn string() !void {
+fn string(can_assign: bool) !void {
+    _ = can_assign;
     const end = parser.previous.text.len - 1;
     const chars = parser.previous.text[1..end]; // remove the quotes
     const s = try object.ObjString.copy(chars);
     try emit_constant(.{ .obj = s.upcast() });
 }
 
-fn variable() !void {
-    try named_variable(parser.previous);
+fn variable(can_assign: bool) !void {
+    try named_variable(parser.previous, can_assign);
 }
 
-fn named_variable(name: scanner.Token) !void {
+fn named_variable(name: scanner.Token, can_assign: bool) !void {
     const arg = try identifier_constant(&name);
-    try emit_two(op_u8(.op_get_global), arg);
+    if (can_assign and match(.equal)) {
+        try expression();
+        try emit_two(op_u8(.op_set_global), arg);
+    } else {
+        try emit_two(op_u8(.op_get_global), arg);
+    }
 }
 
-fn grouping() Allocator.Error!void {
+fn grouping(can_assign: bool) Allocator.Error!void {
+    _ = can_assign;
     try expression();
     consume(.right_paren, "Expected ')' after expression.");
 }
 
-fn unary() Allocator.Error!void {
+fn unary(can_assign: bool) Allocator.Error!void {
+    _ = can_assign;
     const op_kind = parser.previous.kind;
     // compile the operand.
     try parse_precedence(.unary);
@@ -181,7 +195,8 @@ fn unary() Allocator.Error!void {
     };
 }
 
-fn binary() Allocator.Error!void {
+fn binary(can_assign: bool) Allocator.Error!void {
+    _ = can_assign;
     const op_kind = parser.previous.kind;
     const rule = rules.get(op_kind);
     try parse_precedence(rule.precedence.higher());
