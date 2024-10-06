@@ -4,6 +4,7 @@ const config = @import("config");
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
+const List = @import("list.zig").List;
 const Obj = @import("object.zig").Obj;
 const ObjString = @import("object.zig").ObjString;
 const Table = @import("table.zig").Table;
@@ -22,7 +23,8 @@ const VM = struct {
     stack: [STACK_MAX]Value,
     stack_top: [*]Value,
     objects: ?*Obj, // linked list of all allocated objects
-    globals: Table,
+    global_names: Table, // maps global variable names to their indices in the globals array
+    global_values: List(Value),
     strings: Table, // interned strings
 };
 
@@ -41,13 +43,15 @@ pub fn interpret(source: []const u8) !InterpretResult {
 pub fn init_vm() void {
     reset_stack();
     vm.objects = null;
-    vm.globals = Table.init();
+    vm.global_names = Table.init();
+    vm.global_values = List(Value).init();
     vm.strings = Table.init();
 }
 
 pub fn deinit_vm() void {
     memory.free_objects();
-    vm.globals.deinit();
+    vm.global_names.deinit();
+    vm.global_values.deinit();
     vm.strings.deinit();
 }
 
@@ -80,27 +84,23 @@ fn run() !InterpretResult {
             .op_false => push(Value{ .bool_ = false }),
             .op_pop => _ = pop(),
             .op_get_global => {
-                const name = read_constant().obj.downcast_string();
-                if (vm.globals.get(name)) |value| {
-                    push(value);
-                } else {
-                    runtime_error("Undefined variable '{s}'.", .{name.value.as_slice()});
+                const value = vm.global_values.items[read_byte()];
+                if (value == .undefined_) {
+                    runtime_error("Undefined variable.", .{});
                     return .runtime_error;
                 }
+                push(value);
             },
             .op_define_global => {
-                const name = read_constant().obj.downcast_string();
-                _ = try vm.globals.insert(name, peek(0));
-                _ = pop();
+                vm.global_values.items[read_byte()] = pop();
             },
             .op_set_global => {
-                const name = read_constant().obj.downcast_string();
-                const new_key = try vm.globals.insert(name, peek(0));
-                if (new_key) {
-                    _ = vm.globals.delete(name);
-                    runtime_error("Undefined variable '{s}'.", .{name.value.as_slice()});
+                const index = read_byte();
+                if (vm.global_values.items[index] == .undefined_) {
+                    runtime_error("Undefined variable.", .{});
                     return .runtime_error;
                 }
+                vm.global_values.items[index] = peek(0);
             },
             .op_equal => {
                 const b = pop();

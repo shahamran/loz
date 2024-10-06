@@ -8,6 +8,7 @@ pub const Value = union(enum) {
     nil,
     number: f64,
     obj: *Obj,
+    undefined_,
 
     pub fn eql(self: Self, other: Self) bool {
         switch (self) {
@@ -15,6 +16,7 @@ pub const Value = union(enum) {
             .nil => return other == .nil,
             .number => |n| return @as(?f64, n) == other.as_number(),
             .obj => |o| return o.eql(other.as_object() orelse return false),
+            .undefined_ => unreachable,
         }
     }
 
@@ -46,5 +48,6 @@ pub fn print_value(val: Value) void {
         .obj => |o| switch (o.kind) {
             .string => std.debug.print("{s}", .{o.downcast_string().value.as_slice()}),
         },
+        .undefined_ => std.debug.print("undefined", .{}),
     }
 }

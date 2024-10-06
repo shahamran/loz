@@ -7,6 +7,7 @@ const Value = @import("value.zig").Value;
 const Table = @import("table.zig").Table;
 const config = @import("config");
 const object = @import("object.zig");
+const vm = @import("vm.zig");
 
 var parser: Parser = undefined;
 var compiling_chunk: *Chunk = undefined;
@@ -142,11 +143,12 @@ fn parse_variable(error_message: []const u8) !u8 {
 
 fn identifier_constant(name: *const scanner.Token) !u8 {
     const ident = try object.ObjString.copy(name.text);
-    if (string_constants.get(ident)) |constant|
-        return @intFromFloat(constant.number);
-    const index: u8 = @intCast(try make_constant(Value{ .obj = ident.upcast() }));
-    _ = try string_constants.insert(ident, Value{ .number = @floatFromInt(index) });
-    return index;
+    if (vm.vm.global_names.get(ident)) |index|
+        return @intFromFloat(index.number);
+    try vm.vm.global_values.push(Value.undefined_);
+    const index = vm.vm.global_values.items.len - 1;
+    _ = try vm.vm.global_names.insert(ident, Value{ .number = @floatFromInt(index) });
+    return @intCast(index);
 }
 
 fn named_variable(name: scanner.Token, can_assign: bool) !void {
