@@ -4,11 +4,13 @@ const scanner = @import("scanner.zig");
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
+const Table = @import("table.zig").Table;
 const config = @import("config");
 const object = @import("object.zig");
 
 var parser: Parser = undefined;
 var compiling_chunk: *Chunk = undefined;
+var string_constants: Table = undefined;
 
 const Parser = struct {
     current: scanner.Token,
@@ -56,6 +58,8 @@ pub fn compile(source: []const u8, chunk: *Chunk) !bool {
     compiling_chunk = chunk;
     parser.had_error = false;
     parser.panic_mode = false;
+    string_constants = Table.init();
+    defer string_constants.deinit();
     advance();
     while (!match(.eof)) {
         try declaration();
@@ -138,7 +142,11 @@ fn parse_variable(error_message: []const u8) !u8 {
 
 fn identifier_constant(name: *const scanner.Token) !u8 {
     const ident = try object.ObjString.copy(name.text);
-    return @intCast(try make_constant(Value{ .obj = ident.upcast() }));
+    if (string_constants.get(ident)) |constant|
+        return @intFromFloat(constant.number);
+    const index: u8 = @intCast(try make_constant(Value{ .obj = ident.upcast() }));
+    _ = try string_constants.insert(ident, Value{ .number = @floatFromInt(index) });
+    return index;
 }
 
 fn named_variable(name: scanner.Token, can_assign: bool) !void {

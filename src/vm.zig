@@ -23,7 +23,7 @@ const VM = struct {
     stack_top: [*]Value,
     objects: ?*Obj, // linked list of all allocated objects
     globals: Table,
-    strings: Table,
+    strings: Table, // interned strings
 };
 
 pub fn interpret(source: []const u8) !InterpretResult {
