@@ -7,6 +7,9 @@ const Value = @import("value.zig").Value;
 const config = @import("config");
 const object = @import("object.zig");
 
+var parser: Parser = undefined;
+var compiling_chunk: *Chunk = undefined;
+
 const Parser = struct {
     current: scanner.Token,
     previous: scanner.Token,
@@ -14,33 +17,26 @@ const Parser = struct {
     panic_mode: bool,
 };
 
-var parser: Parser = undefined;
-var compiling_chunk: *Chunk = undefined;
-
-pub fn compile(source: []const u8, chunk: *Chunk) !bool {
-    defer end_compiler();
-    scanner.init_scanner(source);
-    compiling_chunk = chunk;
-    parser.had_error = false;
-    parser.panic_mode = false;
-    advance();
-    while (!match(.eof)) {
-        try declaration();
-    }
-    return !parser.had_error;
-}
-
 const Precedence = enum {
+    /// lowest precedence
     none,
-    assignment, // =
-    or_, // or
-    and_, // and
-    equality, // == !=
-    comparison, // < > <= >=
-    term, // + -
-    factor, // * /
-    unary, // ! -
-    call, // . ()
+    /// =
+    assignment,
+    or_,
+    and_,
+    /// ==, !=
+    equality,
+    /// <, >, <=, >=
+    comparison,
+    /// +, -
+    term,
+    /// *, /
+    factor,
+    /// !, -
+    unary,
+    /// ., ()
+    call,
+    /// highest precedence
     primary,
 
     const Self = @This();
@@ -54,11 +50,18 @@ const Precedence = enum {
     }
 };
 
-const ParseRule = struct {
-    prefix: ?*const fn (bool) Allocator.Error!void,
-    infix: ?*const fn (bool) Allocator.Error!void,
-    precedence: Precedence,
-};
+pub fn compile(source: []const u8, chunk: *Chunk) !bool {
+    defer end_compiler();
+    scanner.init_scanner(source);
+    compiling_chunk = chunk;
+    parser.had_error = false;
+    parser.panic_mode = false;
+    advance();
+    while (!match(.eof)) {
+        try declaration();
+    }
+    return !parser.had_error;
+}
 
 fn declaration() !void {
     if (match(.var_)) {
@@ -138,34 +141,6 @@ fn identifier_constant(name: *const scanner.Token) !u8 {
     return @intCast(try make_constant(Value{ .obj = ident.upcast() }));
 }
 
-fn number(can_assign: bool) Allocator.Error!void {
-    _ = can_assign;
-    const value = std.fmt.parseFloat(f64, parser.previous.text) catch unreachable;
-    try emit_constant(Value{ .number = value });
-}
-
-fn literal(can_assign: bool) Allocator.Error!void {
-    _ = can_assign;
-    switch (parser.previous.kind) {
-        .false_ => try emit_byte(op_u8(.op_false)),
-        .true_ => try emit_byte(op_u8(.op_true)),
-        .nil => try emit_byte(op_u8(.op_nil)),
-        else => unreachable,
-    }
-}
-
-fn string(can_assign: bool) !void {
-    _ = can_assign;
-    const end = parser.previous.text.len - 1;
-    const chars = parser.previous.text[1..end]; // remove the quotes
-    const s = try object.ObjString.copy(chars);
-    try emit_constant(.{ .obj = s.upcast() });
-}
-
-fn variable(can_assign: bool) !void {
-    try named_variable(parser.previous, can_assign);
-}
-
 fn named_variable(name: scanner.Token, can_assign: bool) !void {
     const arg = try identifier_constant(&name);
     if (can_assign and match(.equal)) {
@@ -174,45 +149,6 @@ fn named_variable(name: scanner.Token, can_assign: bool) !void {
     } else {
         try emit_two(op_u8(.op_get_global), arg);
     }
-}
-
-fn grouping(can_assign: bool) Allocator.Error!void {
-    _ = can_assign;
-    try expression();
-    consume(.right_paren, "Expected ')' after expression.");
-}
-
-fn unary(can_assign: bool) Allocator.Error!void {
-    _ = can_assign;
-    const op_kind = parser.previous.kind;
-    // compile the operand.
-    try parse_precedence(.unary);
-    // emit the operator instruction.
-    try switch (op_kind) {
-        .bang => emit_byte(op_u8(.op_not)),
-        .minus => emit_byte(op_u8(.op_negate)),
-        else => unreachable,
-    };
-}
-
-fn binary(can_assign: bool) Allocator.Error!void {
-    _ = can_assign;
-    const op_kind = parser.previous.kind;
-    const rule = rules.get(op_kind);
-    try parse_precedence(rule.precedence.higher());
-    try switch (op_kind) {
-        .bang_equal => emit_two(op_u8(.op_equal), op_u8(.op_not)),
-        .equal_equal => emit_byte(op_u8(.op_equal)),
-        .greater => emit_byte(op_u8(.op_greater)),
-        .greater_equal => emit_two(op_u8(.op_less), op_u8(.op_not)),
-        .less => emit_byte(op_u8(.op_less)),
-        .less_equal => emit_two(op_u8(.op_greater), op_u8(.op_not)),
-        .plus => emit_byte(op_u8(.op_add)),
-        .minus => emit_byte(op_u8(.op_subtract)),
-        .star => emit_byte(op_u8(.op_multiply)),
-        .slash => emit_byte(op_u8(.op_divide)),
-        else => unreachable,
-    };
 }
 
 fn advance() void {
@@ -244,7 +180,7 @@ fn check(kind: scanner.TokenType) bool {
     return parser.current.kind == kind;
 }
 
-fn emit_byte(byte: u8) Allocator.Error!void {
+fn emit_byte(byte: u8) !void {
     try current_chunk().write(byte, parser.previous.line);
 }
 
@@ -324,6 +260,88 @@ inline fn op_u8(op: OpCode) u8 {
     return @intFromEnum(op);
 }
 
+/// Parse a number literal.
+fn number(can_assign: bool) Allocator.Error!void {
+    _ = can_assign;
+    const value = std.fmt.parseFloat(f64, parser.previous.text) catch unreachable;
+    try emit_constant(Value{ .number = value });
+}
+
+/// Parse booleans and nil.
+fn literal(can_assign: bool) Allocator.Error!void {
+    _ = can_assign;
+    switch (parser.previous.kind) {
+        .false_ => try emit_byte(op_u8(.op_false)),
+        .true_ => try emit_byte(op_u8(.op_true)),
+        .nil => try emit_byte(op_u8(.op_nil)),
+        else => unreachable,
+    }
+}
+
+/// Parse string literals.
+fn string(can_assign: bool) !void {
+    _ = can_assign;
+    const end = parser.previous.text.len - 1;
+    const chars = parser.previous.text[1..end]; // remove the quotes
+    const s = try object.ObjString.copy(chars);
+    try emit_constant(.{ .obj = s.upcast() });
+}
+
+/// Parse variable names.
+fn variable(can_assign: bool) !void {
+    try named_variable(parser.previous, can_assign);
+}
+
+/// Parse parenthesized expressions.
+fn grouping(can_assign: bool) Allocator.Error!void {
+    _ = can_assign;
+    try expression();
+    consume(.right_paren, "Expected ')' after expression.");
+}
+
+/// Parse unary operators.
+fn unary(can_assign: bool) Allocator.Error!void {
+    _ = can_assign;
+    const op_kind = parser.previous.kind;
+    // compile the operand.
+    try parse_precedence(.unary);
+    // emit the operator instruction.
+    try switch (op_kind) {
+        .bang => emit_byte(op_u8(.op_not)),
+        .minus => emit_byte(op_u8(.op_negate)),
+        else => unreachable,
+    };
+}
+
+/// Parse binary operators.
+fn binary(can_assign: bool) Allocator.Error!void {
+    _ = can_assign;
+    const op_kind = parser.previous.kind;
+    const rule = rules.get(op_kind);
+    try parse_precedence(rule.precedence.higher());
+    try switch (op_kind) {
+        .bang_equal => emit_two(op_u8(.op_equal), op_u8(.op_not)),
+        .equal_equal => emit_byte(op_u8(.op_equal)),
+        .greater => emit_byte(op_u8(.op_greater)),
+        .greater_equal => emit_two(op_u8(.op_less), op_u8(.op_not)),
+        .less => emit_byte(op_u8(.op_less)),
+        .less_equal => emit_two(op_u8(.op_greater), op_u8(.op_not)),
+        .plus => emit_byte(op_u8(.op_add)),
+        .minus => emit_byte(op_u8(.op_subtract)),
+        .star => emit_byte(op_u8(.op_multiply)),
+        .slash => emit_byte(op_u8(.op_divide)),
+        else => unreachable,
+    };
+}
+
+/// Parse table entry.
+const ParseRule = struct {
+    prefix: ?*const fn (bool) Allocator.Error!void,
+    infix: ?*const fn (bool) Allocator.Error!void,
+    precedence: Precedence,
+};
+
+/// Parse table. Maps token types to parsing functions and precedence.
 const rules = std.EnumArray(scanner.TokenType, ParseRule).init(.{
     .left_paren = .{ .prefix = grouping, .infix = null, .precedence = .none },
     .right_paren = .{ .prefix = null, .infix = null, .precedence = .none },
