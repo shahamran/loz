@@ -10,6 +10,7 @@ const object = @import("object.zig");
 const vm = @import("vm.zig");
 
 var parser: Parser = undefined;
+var current: *Compiler = undefined;
 var compiling_chunk: *Chunk = undefined;
 var string_constants: Table = undefined;
 
@@ -18,6 +19,25 @@ const Parser = struct {
     previous: scanner.Token,
     had_error: bool,
     panic_mode: bool,
+};
+
+const Compiler = struct {
+    const Self = @This();
+
+    locals: [std.math.maxInt(u8) + 1]Local,
+    local_count: u8,
+    scope_depth: u8,
+
+    fn init(compiler: *Self) void {
+        compiler.local_count = 0;
+        compiler.scope_depth = 0;
+        current = compiler;
+    }
+};
+
+const Local = struct {
+    name: scanner.Token,
+    depth: ?u8,
 };
 
 const Precedence = enum {
@@ -56,6 +76,8 @@ const Precedence = enum {
 pub fn compile(source: []const u8, chunk: *Chunk) !bool {
     defer end_compiler();
     scanner.init_scanner(source);
+    var compiler = Compiler{ .local_count = 0, .scope_depth = 0, .locals = undefined };
+    Compiler.init(&compiler);
     compiling_chunk = chunk;
     parser.had_error = false;
     parser.panic_mode = false;
@@ -78,19 +100,23 @@ fn declaration() !void {
 }
 
 fn var_declaration() !void {
-    const global = try parse_variable("Expected variable name.");
+    const slot = try parse_variable("Expected variable name.");
     if (match(.equal)) {
         try expression();
     } else {
         try emit_byte(op_u8(.op_nil));
     }
     consume(.semicolon, "Expected ';' after variable declaration.");
-    try define_variable(global);
+    try define_variable(slot);
 }
 
 fn statement() !void {
     if (match(.print)) {
         try print_statement();
+    } else if (match(.left_brace)) {
+        begin_scope();
+        try block();
+        try end_scope();
     } else {
         try expression_statement();
     }
@@ -100,6 +126,13 @@ fn print_statement() !void {
     try expression();
     consume(.semicolon, "Expected ';' after value.");
     try emit_byte(op_u8(.op_print));
+}
+
+fn block() Allocator.Error!void {
+    while (!check(.right_brace) and !check(.eof)) {
+        try declaration();
+    }
+    consume(.right_brace, "Expected '}' after block.");
 }
 
 fn expression_statement() !void {
@@ -133,11 +166,49 @@ fn parse_precedence(precedence: Precedence) Allocator.Error!void {
 }
 
 fn define_variable(global: u8) !void {
+    if (current.scope_depth > 0) {
+        mark_initialized();
+        return;
+    }
     try emit_two(op_u8(.op_define_global), global);
+}
+
+fn mark_initialized() void {
+    current.locals[current.local_count - 1].depth = current.scope_depth;
+}
+
+fn declare_variable() void {
+    if (current.scope_depth == 0) return;
+    const name = &parser.previous;
+    var i: u8 = current.local_count;
+    while (i > 0) {
+        i -= 1;
+        const local = &current.locals[i];
+        if (local.depth != null and local.depth.? < current.scope_depth) {
+            break;
+        }
+        if (identifiers_equal(name, &local.name)) {
+            error_("Variable with this name already declared in this scope.");
+        }
+    }
+    add_local(name.*);
+}
+
+fn add_local(name: scanner.Token) void {
+    if (current.local_count == std.math.maxInt(u8)) {
+        error_("Too many local variables in function.");
+        return;
+    }
+    const local = &current.locals[current.local_count];
+    current.local_count += 1;
+    local.name = name;
+    local.depth = null;
 }
 
 fn parse_variable(error_message: []const u8) !u8 {
     consume(.identifier, error_message);
+    declare_variable();
+    if (current.scope_depth > 0) return 0;
     return try identifier_constant(&parser.previous);
 }
 
@@ -151,13 +222,37 @@ fn identifier_constant(name: *const scanner.Token) !u8 {
     return @intCast(index);
 }
 
+fn resolve_local(compiler: *const Compiler, name: *const scanner.Token) ?u8 {
+    var i = compiler.local_count;
+    while (i > 0) {
+        i -= 1;
+        const local = &compiler.locals[i];
+        if (identifiers_equal(name, &local.name)) {
+            if (local.depth == null)
+                error_("Cannot read local variable in its own initializer.");
+            return i;
+        }
+    }
+    return null;
+}
+
 fn named_variable(name: scanner.Token, can_assign: bool) !void {
-    const arg = try identifier_constant(&name);
+    var arg = resolve_local(current, &name);
+    var get_op: OpCode = undefined;
+    var set_op: OpCode = undefined;
+    if (arg != null) {
+        get_op = .op_get_local;
+        set_op = .op_set_local;
+    } else {
+        arg = try identifier_constant(&name);
+        get_op = .op_get_global;
+        set_op = .op_set_global;
+    }
     if (can_assign and match(.equal)) {
         try expression();
-        try emit_two(op_u8(.op_set_global), arg);
+        try emit_two(op_u8(set_op), arg.?);
     } else {
-        try emit_two(op_u8(.op_get_global), arg);
+        try emit_two(op_u8(get_op), arg.?);
     }
 }
 
@@ -260,6 +355,25 @@ fn end_compiler() void {
             @import("debug.zig").disassemble_chunk(current_chunk(), "code");
         }
     }
+}
+
+fn begin_scope() void {
+    current.scope_depth += 1;
+}
+
+fn end_scope() !void {
+    current.scope_depth -= 1;
+    while (current.local_count > 0 and
+        current.locals[current.local_count - 1].depth orelse 0 >
+        current.scope_depth)
+    {
+        try emit_byte(op_u8(.op_pop));
+        current.local_count -= 1;
+    }
+}
+
+inline fn identifiers_equal(a: *const scanner.Token, b: *const scanner.Token) bool {
+    return std.mem.eql(u8, a.text, b.text);
 }
 
 fn current_chunk() *Chunk {

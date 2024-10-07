@@ -83,6 +83,14 @@ fn run() !InterpretResult {
             .op_true => push(Value{ .bool_ = true }),
             .op_false => push(Value{ .bool_ = false }),
             .op_pop => _ = pop(),
+            .op_get_local => {
+                const slot = read_byte();
+                push(vm.stack[slot]);
+            },
+            .op_set_local => {
+                const slot = read_byte();
+                vm.stack[slot] = peek(0);
+            },
             .op_get_global => {
                 const value = vm.global_values.items[read_byte()];
                 if (value == .undefined_) {
