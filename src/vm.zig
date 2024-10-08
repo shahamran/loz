@@ -160,6 +160,10 @@ fn run() !InterpretResult {
                 const offset = read_u16();
                 if (is_falsey(peek(0))) vm.ip += offset;
             },
+            .op_loop => {
+                const offset = read_u16();
+                vm.ip -= offset;
+            },
             .op_return => {
                 return .ok;
             },

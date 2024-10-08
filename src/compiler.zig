@@ -115,6 +115,8 @@ fn statement() !void {
         try print_statement();
     } else if (match(.if_)) {
         try if_statement();
+    } else if (match(.while_)) {
+        try while_statement();
     } else if (match(.left_brace)) {
         begin_scope();
         try block();
@@ -145,6 +147,19 @@ fn if_statement() Allocator.Error!void {
 
     if (match(.else_)) try statement();
     patch_jump(else_jump);
+}
+
+fn while_statement() Allocator.Error!void {
+    const loop_start = current_chunk().code.items.len;
+    consume(.left_paren, "Expected '(' after 'while'.");
+    try expression();
+    consume(.right_paren, "Expected ')' after condition.");
+    const exit_jump = try emit_jump(.op_jump_if_false);
+    try emit_byte(op_u8(.op_pop));
+    try statement();
+    try emit_loop(loop_start);
+    patch_jump(exit_jump);
+    try emit_byte(op_u8(.op_pop));
 }
 
 fn block() Allocator.Error!void {
@@ -322,6 +337,14 @@ fn emit_jump(instruction: OpCode) !usize {
     try emit_two(0xff, 0xff);
     // the index of the first byte of the jump offset.
     return current_chunk().code.items.len - 2;
+}
+
+fn emit_loop(loop_start: usize) !void {
+    try emit_byte(op_u8(.op_loop));
+    const offset = current_chunk().code.items.len - loop_start + 2;
+    if (offset > std.math.maxInt(u16)) error_("Loop body too large.");
+    try emit_byte(@intCast((offset >> 8) & 0xff));
+    try emit_byte(@intCast(offset & 0xff));
 }
 
 fn patch_jump(offset: usize) void {
