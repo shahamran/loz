@@ -493,6 +493,25 @@ fn binary(can_assign: bool) Allocator.Error!void {
     };
 }
 
+/// Parse logical and as control flow.
+fn and_(can_assign: bool) Allocator.Error!void {
+    _ = can_assign;
+    const end_jump = try emit_jump(.op_jump_if_false);
+    try emit_byte(op_u8(.op_pop));
+    try parse_precedence(.and_);
+    patch_jump(end_jump);
+}
+
+fn or_(can_assign: bool) Allocator.Error!void {
+    _ = can_assign;
+    const else_jump = try emit_jump(.op_jump_if_false);
+    const end_jump = try emit_jump(.op_jump);
+    patch_jump(else_jump);
+    try emit_byte(op_u8(.op_pop));
+    try parse_precedence(.or_);
+    patch_jump(end_jump);
+}
+
 /// Parse table entry.
 const ParseRule = struct {
     prefix: ?*const fn (bool) Allocator.Error!void,
@@ -524,7 +543,7 @@ const rules = std.EnumArray(scanner.TokenType, ParseRule).init(.{
     .identifier = .{ .prefix = variable, .infix = null, .precedence = .none },
     .string = .{ .prefix = string, .infix = null, .precedence = .none },
     .number = .{ .prefix = number, .infix = null, .precedence = .none },
-    .and_ = .{ .prefix = null, .infix = null, .precedence = .none },
+    .and_ = .{ .prefix = null, .infix = and_, .precedence = .and_ },
     .class = .{ .prefix = null, .infix = null, .precedence = .none },
     .else_ = .{ .prefix = null, .infix = null, .precedence = .none },
     .false_ = .{ .prefix = literal, .infix = null, .precedence = .none },
@@ -532,7 +551,7 @@ const rules = std.EnumArray(scanner.TokenType, ParseRule).init(.{
     .fun = .{ .prefix = null, .infix = null, .precedence = .none },
     .if_ = .{ .prefix = null, .infix = null, .precedence = .none },
     .nil = .{ .prefix = literal, .infix = null, .precedence = .none },
-    .or_ = .{ .prefix = null, .infix = null, .precedence = .none },
+    .or_ = .{ .prefix = null, .infix = or_, .precedence = .or_ },
     .print = .{ .prefix = null, .infix = null, .precedence = .none },
     .return_ = .{ .prefix = null, .infix = null, .precedence = .none },
     .super = .{ .prefix = null, .infix = null, .precedence = .none },
