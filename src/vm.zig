@@ -152,6 +152,14 @@ fn run() !InterpretResult {
                 print_value(pop());
                 std.debug.print("\n", .{});
             },
+            .op_jump => {
+                const offset = read_u16();
+                vm.ip += offset;
+            },
+            .op_jump_if_false => {
+                const offset = read_u16();
+                if (is_falsey(peek(0))) vm.ip += offset;
+            },
             .op_return => {
                 return .ok;
             },
@@ -231,6 +239,13 @@ fn read_byte() u8 {
     const byte = vm.ip[0];
     vm.ip += 1;
     return byte;
+}
+
+fn read_u16() u16 {
+    const byte1 = vm.ip[0];
+    const byte2 = vm.ip[1];
+    vm.ip += 2;
+    return (@as(u16, byte1) << 8) | @as(u16, byte2);
 }
 
 fn read_constant() Value {

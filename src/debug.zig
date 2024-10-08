@@ -42,6 +42,8 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
         .op_not => return simple_instruction("OP_NOT", offset),
         .op_negate => return simple_instruction("OP_NEGATE", offset),
         .op_print => return simple_instruction("OP_PRINT", offset),
+        .op_jump => return jump_instruction("OP_JUMP", .forward, chunk, offset),
+        .op_jump_if_false => return jump_instruction("OP_JUMP_IF_FALSE", .forward, chunk, offset),
         .op_return => return simple_instruction("OP_RETURN", offset),
     }
     std.debug.print("Unknown opcode {}\n", .{chunk.code[offset]});
@@ -78,6 +80,18 @@ fn constant_long_instruction(name: []const u8, chunk: *const Chunk, offset: usiz
     print_value(chunk.constants.items[constant]);
     std.debug.print("'\n", .{});
     return offset + 4;
+}
+
+const Direction = enum {
+    forward,
+    backward,
+};
+
+fn jump_instruction(name: []const u8, direction: Direction, chunk: *const Chunk, offset: usize) usize {
+    var jump = (@as(usize, chunk.code.items[offset + 1]) << 8) | @as(usize, chunk.code.items[offset + 2]);
+    jump = if (direction == .forward) offset + 3 + jump else offset + 3 - jump;
+    std.debug.print("{s: <16} {d: >4} -> {d}\n", .{ name, offset, jump });
+    return offset + 3;
 }
 
 pub fn get_line(chunk: *const Chunk, offset: usize) usize {

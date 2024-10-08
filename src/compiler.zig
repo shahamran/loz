@@ -113,6 +113,8 @@ fn var_declaration() !void {
 fn statement() !void {
     if (match(.print)) {
         try print_statement();
+    } else if (match(.if_)) {
+        try if_statement();
     } else if (match(.left_brace)) {
         begin_scope();
         try block();
@@ -126,6 +128,23 @@ fn print_statement() !void {
     try expression();
     consume(.semicolon, "Expected ';' after value.");
     try emit_byte(op_u8(.op_print));
+}
+
+fn if_statement() Allocator.Error!void {
+    consume(.left_paren, "Expected '(' after 'if'.");
+    try expression();
+    consume(.right_paren, "Expected ')' after condition.");
+
+    const then_jump = try emit_jump(.op_jump_if_false);
+    try emit_byte(op_u8(.op_pop));
+    try statement();
+
+    const else_jump = try emit_jump(.op_jump);
+    patch_jump(then_jump);
+    try emit_byte(op_u8(.op_pop));
+
+    if (match(.else_)) try statement();
+    patch_jump(else_jump);
 }
 
 fn block() Allocator.Error!void {
@@ -296,6 +315,22 @@ fn emit_return() !void {
 fn emit_two(byte1: u8, byte2: u8) !void {
     try emit_byte(byte1);
     try emit_byte(byte2);
+}
+
+fn emit_jump(instruction: OpCode) !usize {
+    try emit_byte(op_u8(instruction));
+    try emit_two(0xff, 0xff);
+    // the index of the first byte of the jump offset.
+    return current_chunk().code.items.len - 2;
+}
+
+fn patch_jump(offset: usize) void {
+    const jump = current_chunk().code.items.len - offset - 2;
+    if (jump > std.math.maxInt(u16)) {
+        error_("Too much code to jump over.");
+    }
+    current_chunk().code.items[offset] = @intCast((jump >> 8) & 0xff);
+    current_chunk().code.items[offset + 1] = @intCast(jump & 0xff);
 }
 
 fn emit_constant(value: Value) !void {
