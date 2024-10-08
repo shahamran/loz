@@ -113,6 +113,8 @@ fn var_declaration() !void {
 fn statement() !void {
     if (match(.print)) {
         try print_statement();
+    } else if (match(.for_)) {
+        try for_statement();
     } else if (match(.if_)) {
         try if_statement();
     } else if (match(.while_)) {
@@ -130,6 +132,49 @@ fn print_statement() !void {
     try expression();
     consume(.semicolon, "Expected ';' after value.");
     try emit_byte(op_u8(.op_print));
+}
+
+fn for_statement() Allocator.Error!void {
+    begin_scope();
+    consume(.left_paren, "Expected '(' after 'for'.");
+    if (match(.semicolon)) {
+        // no initialier.
+    } else if (match(.var_)) {
+        try var_declaration();
+    } else {
+        try expression_statement();
+    }
+
+    var loop_start = current_chunk().code.items.len;
+    var exit_jump: ?usize = null;
+    if (!match(.semicolon)) {
+        try expression();
+        consume(.semicolon, "Expected ';' after loop condition.");
+        // jump out of the loop if the condition is false.
+        exit_jump = try emit_jump(.op_jump_if_false);
+        try emit_byte(op_u8(.op_pop));
+    }
+
+    if (!match(.right_paren)) {
+        const body_jump = try emit_jump(.op_jump);
+        const increment_start = current_chunk().code.items.len;
+        try expression();
+        try emit_byte(op_u8(.op_pop));
+        consume(.right_paren, "Expected ')' after 'for' clauses.");
+        try emit_loop(loop_start);
+        loop_start = increment_start;
+        patch_jump(body_jump);
+    }
+
+    try statement();
+    try emit_loop(loop_start);
+
+    if (exit_jump) |offset| {
+        patch_jump(offset);
+        try emit_byte(op_u8(.op_pop)); // condition.
+    }
+
+    try end_scope();
 }
 
 fn if_statement() Allocator.Error!void {
