@@ -26,6 +26,7 @@ const Parser = struct {
 const Compiler = struct {
     const Self = @This();
 
+    enclosing: ?*Self,
     function: *object.ObjFunction,
     kind: FunctionKind,
     locals: [UINT8_COUNT]Local,
@@ -33,12 +34,16 @@ const Compiler = struct {
     scope_depth: u8,
 
     fn init(compiler: *Self, kind: FunctionKind) !void {
+        compiler.enclosing = current;
         compiler.function = undefined;
         compiler.kind = kind;
         compiler.local_count = 0;
         compiler.scope_depth = 0;
         compiler.function = try object.ObjFunction.init();
         current = compiler;
+        if (kind != .script) {
+            current.function.name = try object.ObjString.copy(parser.previous.text);
+        }
 
         const local = &current.locals[current.local_count];
         current.local_count += 1;
@@ -107,12 +112,21 @@ pub fn compile(source: []const u8) !?*object.ObjFunction {
 }
 
 fn declaration() !void {
-    if (match(.var_)) {
+    if (match(.fun)) {
+        try fun_declaration();
+    } else if (match(.var_)) {
         try var_declaration();
     } else {
         try statement();
     }
     if (parser.panic_mode) synchronize();
+}
+
+fn fun_declaration() !void {
+    const global = try parse_variable("Expected function name.");
+    mark_initialized();
+    try function(.function);
+    try define_variable(global);
 }
 
 fn var_declaration() !void {
@@ -133,6 +147,8 @@ fn statement() !void {
         try for_statement();
     } else if (match(.if_)) {
         try if_statement();
+    } else if (match(.return_)) {
+        try return_statement();
     } else if (match(.while_)) {
         try while_statement();
     } else if (match(.left_brace)) {
@@ -210,6 +226,19 @@ fn if_statement() Allocator.Error!void {
     patch_jump(else_jump);
 }
 
+fn return_statement() Allocator.Error!void {
+    if (current.kind == .script) {
+        error_("Can't return from top-level code.");
+    }
+    if (match(.semicolon)) {
+        try emit_return();
+    } else {
+        try expression();
+        consume(.semicolon, "Expected ';' after return value.");
+        try emit_byte(op_u8(.op_return));
+    }
+}
+
 fn while_statement() Allocator.Error!void {
     const loop_start = current_chunk().code.items.len;
     consume(.left_paren, "Expected '(' after 'while'.");
@@ -228,6 +257,32 @@ fn block() Allocator.Error!void {
         try declaration();
     }
     consume(.right_brace, "Expected '}' after block.");
+}
+
+fn function(kind: FunctionKind) !void {
+    var compiler: Compiler = undefined;
+    try compiler.init(kind);
+    begin_scope();
+
+    consume(.left_paren, "Expected '(' after function name.");
+    if (!check(.right_paren)) {
+        while (true) {
+            current.function.arity += 1;
+            if (current.function.arity > 255) {
+                error_at_current("Can't have more than 255 parameters.");
+            }
+            const constant = try parse_variable("Expected parameter name.");
+            try define_variable(constant);
+            if (!match(.comma)) break;
+        }
+    }
+    consume(.right_paren, "Expected ')' after parameters.");
+    consume(.left_brace, "Expected '{' before function body.");
+    try block();
+
+    const fun = end_compiler();
+    const constant = try make_constant(.{ .obj = fun.upcast() });
+    try emit_two(op_u8(.op_constant), @intCast(constant));
 }
 
 fn expression_statement() !void {
@@ -268,7 +323,24 @@ fn define_variable(global: u8) !void {
     try emit_two(op_u8(.op_define_global), global);
 }
 
+fn argument_list() !u8 {
+    var arg_count: u8 = 0;
+    if (!check(.right_paren)) {
+        while (true) {
+            try expression();
+            if (arg_count == 255) {
+                error_("Can't have more than 255 arguments.");
+            }
+            arg_count += 1;
+            if (!match(.comma)) break;
+        }
+    }
+    consume(.right_paren, "Expected ')' after arguments.");
+    return arg_count;
+}
+
 fn mark_initialized() void {
+    if (current.scope_depth == 0) return;
     current.locals[current.local_count - 1].depth = current.scope_depth;
 }
 
@@ -385,6 +457,7 @@ fn emit_byte(byte: u8) !void {
 }
 
 fn emit_return() !void {
+    try emit_byte(op_u8(.op_nil));
     try emit_byte(op_u8(.op_return));
 }
 
@@ -469,16 +542,17 @@ fn error_at(token: *scanner.Token, message: []const u8) void {
 
 fn end_compiler() *object.ObjFunction {
     emit_return() catch unreachable;
-    const function = current.function;
+    const fun = current.function;
     if (config.print_code) {
         if (!parser.had_error) {
-            @import("debug.zig").disassemble_chunk(current_chunk(), if (function.name) |name|
+            @import("debug.zig").disassemble_chunk(current_chunk(), if (fun.name) |name|
                 name.value.as_slice()
             else
                 "<script>");
         }
     }
-    return function;
+    if (current.enclosing) |compiler| current = compiler;
+    return fun;
 }
 
 fn begin_scope() void {
@@ -582,6 +656,12 @@ fn binary(can_assign: bool) Allocator.Error!void {
     };
 }
 
+fn call(can_assign: bool) Allocator.Error!void {
+    _ = can_assign;
+    const arg_count = try argument_list();
+    try emit_two(op_u8(.op_call), arg_count);
+}
+
 /// Parse logical and as control flow.
 fn and_(can_assign: bool) Allocator.Error!void {
     _ = can_assign;
@@ -610,7 +690,7 @@ const ParseRule = struct {
 
 /// Parse table. Maps token types to parsing functions and precedence.
 const rules = std.EnumArray(scanner.TokenType, ParseRule).init(.{
-    .left_paren = .{ .prefix = grouping, .infix = null, .precedence = .none },
+    .left_paren = .{ .prefix = grouping, .infix = call, .precedence = .call },
     .right_paren = .{ .prefix = null, .infix = null, .precedence = .none },
     .left_brace = .{ .prefix = null, .infix = null, .precedence = .none },
     .right_brace = .{ .prefix = null, .infix = null, .precedence = .none },

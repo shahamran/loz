@@ -61,11 +61,7 @@ const CallFrame = struct {
 pub fn interpret(source: []const u8) !InterpretResult {
     var function = try compiler.compile(source) orelse return .compile_error;
     push(Value{ .obj = function.upcast() });
-    var frame = &vm.frames[vm.frame_count];
-    vm.frame_count += 1;
-    frame.function = function;
-    frame.ip = function.chunk.code.items.ptr;
-    frame.slots = vm.stack[0..];
+    _ = call(function, 0);
 
     return try run();
 }
@@ -197,8 +193,23 @@ fn run() !InterpretResult {
                 const offset = frame.read_u16();
                 frame.ip -= offset;
             },
+            .op_call => {
+                const arg_count = frame.read_byte();
+                if (!call_value(peek(arg_count), arg_count)) {
+                    return .runtime_error;
+                }
+                frame = &vm.frames[vm.frame_count - 1];
+            },
             .op_return => {
-                return .ok;
+                const result = pop();
+                vm.frame_count -= 1;
+                if (vm.frame_count == 0) {
+                    _ = pop();
+                    return .ok;
+                }
+                vm.stack_top = frame.slots;
+                push(result);
+                frame = &vm.frames[vm.frame_count - 1];
             },
         }
     }
@@ -221,6 +232,35 @@ fn pop() Value {
 
 fn peek(distance: usize) Value {
     return (vm.stack_top - 1 - distance)[0];
+}
+
+fn call_value(callee: Value, arg_count: u8) bool {
+    switch (callee) {
+        .obj => |o| switch (o.kind) {
+            .function => return call(o.downcast_function(), arg_count),
+            else => {},
+        },
+        else => {},
+    }
+    runtime_error("Can only call functions and classes.", .{});
+    return false;
+}
+
+fn call(function: *ObjFunction, arg_count: u8) bool {
+    if (arg_count != function.arity) {
+        runtime_error("Expected {d} arguments but got {d}.", .{ function.arity, arg_count });
+        return false;
+    }
+    if (vm.frame_count == VM.FRAMES_MAX) {
+        runtime_error("Stack overflow.", .{});
+        return false;
+    }
+    var frame = &vm.frames[vm.frame_count];
+    vm.frame_count += 1;
+    frame.function = function;
+    frame.ip = function.chunk.code.items.ptr;
+    frame.slots = vm.stack_top - arg_count - 1;
+    return true;
 }
 
 fn is_falsey(value: Value) bool {
@@ -267,9 +307,20 @@ fn less(a: f64, b: f64) bool {
 fn runtime_error(comptime fmt: []const u8, args: anytype) void {
     std.debug.print(fmt, args);
     std.debug.print("\n", .{});
-    const frame = &vm.frames[vm.frame_count - 1];
-    const instruction = frame.ip - frame.function.chunk.code.items.ptr - 1;
-    const line = get_line(&frame.function.chunk, instruction);
-    std.debug.print("[line {d}] in script \n", .{line});
+
+    var i = vm.frame_count;
+    while (i > 0) {
+        i -= 1;
+        const frame = &vm.frames[i];
+        const function = frame.function;
+        const instruction = frame.ip - function.chunk.code.items.ptr - 1;
+        const line = function.chunk.get_line(instruction);
+        std.debug.print("[line {d}] in ", .{line});
+        if (function.name) |name| {
+            std.debug.print("{s}()\n", .{name.value.as_slice()});
+        } else {
+            std.debug.print("script\n", .{});
+        }
+    }
     reset_stack();
 }
