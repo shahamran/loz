@@ -47,6 +47,14 @@ pub fn print_value(val: Value) void {
         .number => |n| std.debug.print("{d}", .{n}),
         .obj => |o| switch (o.kind) {
             .string => std.debug.print("{s}", .{o.downcast_string().value.as_slice()}),
+            .function => {
+                const fun = o.downcast_function();
+                if (fun.name) |name| {
+                    std.debug.print("<fn {s}>", .{name.value.as_slice()});
+                } else {
+                    std.debug.print("<script>", .{});
+                }
+            },
         },
         .undefined_ => std.debug.print("undefined", .{}),
     }

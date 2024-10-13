@@ -22,7 +22,6 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
     const code: OpCode = @enumFromInt(chunk.code.items[offset]);
     switch (code) {
         .op_constant => return constant_instruction("OP_CONSTANT", chunk, offset),
-        .op_constant_long => return constant_long_instruction("OP_CONSTANT_LONG", chunk, offset),
         .op_nil => return simple_instruction("OP_NIL", offset),
         .op_true => return simple_instruction("OP_TRUE", offset),
         .op_false => return simple_instruction("OP_FALSE", offset),
@@ -68,19 +67,6 @@ fn byte_instruction(name: []const u8, chunk: *const Chunk, offset: usize) usize 
     const slot = chunk.code.items[offset + 1];
     std.debug.print("{s: <16} {d: >4}\n", .{ name, slot });
     return offset + 2;
-}
-
-fn constant_long_instruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
-    const bytes = .{
-        @as(usize, chunk.code.items[offset + 1]),
-        @as(usize, chunk.code.items[offset + 2]),
-        @as(usize, chunk.code.items[offset + 3]),
-    };
-    const constant = bytes[0] | (bytes[1] << 8) | (bytes[2] << 16);
-    std.debug.print("{s: <16} {d: >4} '", .{ name, constant });
-    print_value(chunk.constants.items[constant]);
-    std.debug.print("'\n", .{});
-    return offset + 4;
 }
 
 const Direction = enum {

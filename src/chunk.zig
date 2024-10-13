@@ -38,25 +38,6 @@ pub const Chunk = struct {
         return self.constants.items.len - 1;
     }
 
-    pub fn write_constant(self: *Self, val: Value, line: usize) Allocator.Error!void {
-        const const_index = try self.add_constant(val);
-        if (const_index < 256) {
-            try self.write(@intFromEnum(OpCode.op_constant), line);
-            try self.write(@intCast(const_index), line);
-            return;
-        } else {
-            const bytes: [3]u8 = .{
-                @intCast(const_index & 0xff),
-                @intCast((const_index >> 8) & 0xff),
-                @intCast((const_index >> 16) & 0xff),
-            };
-            try self.write(@intFromEnum(OpCode.op_constant_long), line);
-            try self.write(bytes[0], line);
-            try self.write(bytes[1], line);
-            try self.write(bytes[2], line);
-        }
-    }
-
     pub fn get_line(self: *const Self, offset: usize) usize {
         // TODO: binary search
         for (self.lines.items, 0..) |line, i| {
@@ -70,7 +51,6 @@ pub const Chunk = struct {
 
 pub const OpCode = enum(u8) {
     op_constant,
-    op_constant_long,
     op_nil,
     op_true,
     op_false,

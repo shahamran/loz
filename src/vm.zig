@@ -6,6 +6,7 @@ const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
 const List = @import("list.zig").List;
 const Obj = @import("object.zig").Obj;
+const ObjFunction = @import("object.zig").ObjFunction;
 const ObjString = @import("object.zig").ObjString;
 const Table = @import("table.zig").Table;
 const compiler = @import("compiler.zig");
@@ -13,13 +14,17 @@ const print_value = @import("value.zig").print_value;
 const get_line = @import("debug.zig").get_line;
 const memory = @import("memory.zig");
 
+const UINT8_COUNT = std.math.maxInt(u8) + 1;
+
 pub var vm: VM = undefined;
 
 const VM = struct {
-    const STACK_MAX = 256;
+    const FRAMES_MAX = 64;
+    const STACK_MAX = FRAMES_MAX * UINT8_COUNT;
 
-    chunk: *Chunk,
-    ip: [*]u8,
+    frames: [FRAMES_MAX]CallFrame,
+    frame_count: u8,
+
     stack: [STACK_MAX]Value,
     stack_top: [*]Value,
     objects: ?*Obj, // linked list of all allocated objects
@@ -28,17 +33,48 @@ const VM = struct {
     strings: Table, // interned strings
 };
 
-pub fn interpret(source: []const u8) !InterpretResult {
-    var chunk = Chunk.init();
-    defer chunk.deinit();
+const CallFrame = struct {
+    const Self = @This();
 
-    if (!try compiler.compile(source, &chunk)) {
-        return .compile_error;
+    function: *ObjFunction,
+    ip: [*]u8,
+    slots: [*]Value,
+
+    inline fn read_byte(self: *Self) u8 {
+        const byte = self.ip[0];
+        self.ip += 1;
+        return byte;
     }
-    vm.chunk = &chunk;
-    vm.ip = vm.chunk.code.items.ptr;
+
+    inline fn read_u16(self: *Self) u16 {
+        const byte1 = self.ip[0];
+        const byte2 = self.ip[1];
+        self.ip += 2;
+        return (@as(u16, byte1) << 8) | @as(u16, byte2);
+    }
+
+    inline fn read_constant(self: *Self) Value {
+        return self.function.chunk.constants.items[self.read_byte()];
+    }
+};
+
+pub fn interpret(source: []const u8) !InterpretResult {
+    var function = try compiler.compile(source) orelse return .compile_error;
+    push(Value{ .obj = function.upcast() });
+    var frame = &vm.frames[vm.frame_count];
+    vm.frame_count += 1;
+    frame.function = function;
+    frame.ip = function.chunk.code.items.ptr;
+    frame.slots = vm.stack[0..];
+
     return try run();
 }
+
+pub const InterpretResult = enum {
+    ok,
+    compile_error,
+    runtime_error,
+};
 
 pub fn init_vm() void {
     reset_stack();
@@ -56,6 +92,7 @@ pub fn deinit_vm() void {
 }
 
 fn run() !InterpretResult {
+    var frame = &vm.frames[vm.frame_count - 1];
     while (true) {
         if (comptime config.trace_execution) {
             std.debug.print("          ", .{});
@@ -67,16 +104,12 @@ fn run() !InterpretResult {
             }
             std.debug.print("\n", .{});
             _ = @import("debug.zig")
-                .disassemble_instruction(vm.chunk, vm.ip - vm.chunk.code.items.ptr);
+                .disassemble_instruction(&frame.function.chunk, frame.ip - frame.function.chunk.code.items.ptr);
         }
-        const instruction: OpCode = @enumFromInt(read_byte());
+        const instruction: OpCode = @enumFromInt(frame.read_byte());
         switch (instruction) {
             .op_constant => {
-                const constant = read_constant();
-                push(constant);
-            },
-            .op_constant_long => {
-                const constant = read_constant_long();
+                const constant = frame.read_constant();
                 push(constant);
             },
             .op_nil => push(Value{ .nil = {} }),
@@ -84,15 +117,15 @@ fn run() !InterpretResult {
             .op_false => push(Value{ .bool_ = false }),
             .op_pop => _ = pop(),
             .op_get_local => {
-                const slot = read_byte();
-                push(vm.stack[slot]);
+                const slot = frame.read_byte();
+                push(frame.slots[slot]);
             },
             .op_set_local => {
-                const slot = read_byte();
-                vm.stack[slot] = peek(0);
+                const slot = frame.read_byte();
+                frame.slots[slot] = peek(0);
             },
             .op_get_global => {
-                const value = vm.global_values.items[read_byte()];
+                const value = vm.global_values.items[frame.read_byte()];
                 if (value == .undefined_) {
                     runtime_error("Undefined variable.", .{});
                     return .runtime_error;
@@ -100,10 +133,10 @@ fn run() !InterpretResult {
                 push(value);
             },
             .op_define_global => {
-                vm.global_values.items[read_byte()] = pop();
+                vm.global_values.items[frame.read_byte()] = pop();
             },
             .op_set_global => {
-                const index = read_byte();
+                const index = frame.read_byte();
                 if (vm.global_values.items[index] == .undefined_) {
                     runtime_error("Undefined variable.", .{});
                     return .runtime_error;
@@ -153,16 +186,16 @@ fn run() !InterpretResult {
                 std.debug.print("\n", .{});
             },
             .op_jump => {
-                const offset = read_u16();
-                vm.ip += offset;
+                const offset = frame.read_u16();
+                frame.ip += offset;
             },
             .op_jump_if_false => {
-                const offset = read_u16();
-                if (is_falsey(peek(0))) vm.ip += offset;
+                const offset = frame.read_u16();
+                if (is_falsey(peek(0))) frame.ip += offset;
             },
             .op_loop => {
-                const offset = read_u16();
-                vm.ip -= offset;
+                const offset = frame.read_u16();
+                frame.ip -= offset;
             },
             .op_return => {
                 return .ok;
@@ -173,6 +206,7 @@ fn run() !InterpretResult {
 
 fn reset_stack() void {
     vm.stack_top = &vm.stack;
+    vm.frame_count = 0;
 }
 
 fn push(value: Value) void {
@@ -233,38 +267,9 @@ fn less(a: f64, b: f64) bool {
 fn runtime_error(comptime fmt: []const u8, args: anytype) void {
     std.debug.print(fmt, args);
     std.debug.print("\n", .{});
-    const instruction = vm.ip - vm.chunk.code.items.ptr - 1;
-    const line = get_line(vm.chunk, instruction);
+    const frame = &vm.frames[vm.frame_count - 1];
+    const instruction = frame.ip - frame.function.chunk.code.items.ptr - 1;
+    const line = get_line(&frame.function.chunk, instruction);
     std.debug.print("[line {d}] in script \n", .{line});
     reset_stack();
 }
-
-fn read_byte() u8 {
-    const byte = vm.ip[0];
-    vm.ip += 1;
-    return byte;
-}
-
-fn read_u16() u16 {
-    const byte1 = vm.ip[0];
-    const byte2 = vm.ip[1];
-    vm.ip += 2;
-    return (@as(u16, byte1) << 8) | @as(u16, byte2);
-}
-
-fn read_constant() Value {
-    return vm.chunk.constants.items[read_byte()];
-}
-
-fn read_constant_long() Value {
-    var index = @as(usize, read_byte());
-    index = index | (@as(usize, read_byte()) << 8);
-    index = index | (@as(usize, read_byte()) << 16);
-    return vm.chunk.constants.items[index];
-}
-
-pub const InterpretResult = enum {
-    ok,
-    compile_error,
-    runtime_error,
-};

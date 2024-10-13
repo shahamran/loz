@@ -9,6 +9,8 @@ const config = @import("config");
 const object = @import("object.zig");
 const vm = @import("vm.zig");
 
+const UINT8_COUNT = std.math.maxInt(u8) + 1;
+
 var parser: Parser = undefined;
 var current: *Compiler = undefined;
 var compiling_chunk: *Chunk = undefined;
@@ -24,15 +26,30 @@ const Parser = struct {
 const Compiler = struct {
     const Self = @This();
 
-    locals: [std.math.maxInt(u8) + 1]Local,
+    function: *object.ObjFunction,
+    kind: FunctionKind,
+    locals: [UINT8_COUNT]Local,
     local_count: u8,
     scope_depth: u8,
 
-    fn init(compiler: *Self) void {
+    fn init(compiler: *Self, kind: FunctionKind) !void {
+        compiler.function = undefined;
+        compiler.kind = kind;
         compiler.local_count = 0;
         compiler.scope_depth = 0;
+        compiler.function = try object.ObjFunction.init();
         current = compiler;
+
+        const local = &current.locals[current.local_count];
+        current.local_count += 1;
+        local.depth = 0;
+        local.name.text = "";
     }
+};
+
+const FunctionKind = enum {
+    function,
+    script,
 };
 
 const Local = struct {
@@ -73,12 +90,10 @@ const Precedence = enum {
     }
 };
 
-pub fn compile(source: []const u8, chunk: *Chunk) !bool {
-    defer end_compiler();
+pub fn compile(source: []const u8) !?*object.ObjFunction {
     scanner.init_scanner(source);
-    var compiler = Compiler{ .local_count = 0, .scope_depth = 0, .locals = undefined };
-    Compiler.init(&compiler);
-    compiling_chunk = chunk;
+    var compiler: Compiler = undefined;
+    try Compiler.init(&compiler, .script);
     parser.had_error = false;
     parser.panic_mode = false;
     string_constants = Table.init();
@@ -87,7 +102,8 @@ pub fn compile(source: []const u8, chunk: *Chunk) !bool {
     while (!match(.eof)) {
         try declaration();
     }
-    return !parser.had_error;
+    const fun = end_compiler();
+    return if (parser.had_error) null else fun;
 }
 
 fn declaration() !void {
@@ -451,13 +467,18 @@ fn error_at(token: *scanner.Token, message: []const u8) void {
     parser.had_error = true;
 }
 
-fn end_compiler() void {
+fn end_compiler() *object.ObjFunction {
     emit_return() catch unreachable;
+    const function = current.function;
     if (config.print_code) {
         if (!parser.had_error) {
-            @import("debug.zig").disassemble_chunk(current_chunk(), "code");
+            @import("debug.zig").disassemble_chunk(current_chunk(), if (function.name) |name|
+                name.value.as_slice()
+            else
+                "<script>");
         }
     }
+    return function;
 }
 
 fn begin_scope() void {
@@ -480,7 +501,7 @@ inline fn identifiers_equal(a: *const scanner.Token, b: *const scanner.Token) bo
 }
 
 fn current_chunk() *Chunk {
-    return compiling_chunk;
+    return &current.function.chunk;
 }
 
 inline fn op_u8(op: OpCode) u8 {

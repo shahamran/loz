@@ -1,5 +1,6 @@
 const std = @import("std");
 const memory = @import("memory.zig");
+const Chunk = @import("chunk.zig").Chunk;
 const String = @import("string.zig").String;
 const vm = @import("vm.zig");
 
@@ -12,6 +13,10 @@ pub const Obj = struct {
         return @alignCast(@fieldParentPtr("obj", self));
     }
 
+    pub inline fn downcast_function(self: *Obj) *ObjFunction {
+        return self.downcast(ObjFunction);
+    }
+
     pub inline fn downcast_string(self: *Obj) *ObjString {
         return self.downcast(ObjString);
     }
@@ -20,10 +25,40 @@ pub const Obj = struct {
         if (self.kind != other.kind) {
             return false;
         }
-        switch (self.kind) {
+        return switch (self.kind) {
             // strings are interned, so we can compare them by pointer
-            .string => return self == other,
-        }
+            .string => self == other,
+            .function => other.kind == .function and
+                self.downcast_function().name == other.downcast_function().name,
+        };
+    }
+};
+
+pub const ObjFunction = struct {
+    const Self = @This();
+    const obj_kind = ObjKind.function;
+
+    obj: Obj,
+    arity: u8,
+    chunk: Chunk,
+    name: ?*ObjString,
+
+    pub fn init() !*Self {
+        const fun = try allocate_object(Self);
+        fun.arity = 0;
+        fun.chunk = Chunk.init();
+        fun.name = null;
+        return fun;
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.chunk.deinit();
+        const f: []Self = self[0..1]; // memory.reallocate expects a slice
+        memory.free(f);
+    }
+
+    pub inline fn upcast(self: *Self) *Obj {
+        return &self.obj;
     }
 };
 
@@ -72,6 +107,7 @@ pub const ObjString = struct {
 };
 
 pub const ObjKind = enum {
+    function,
     string,
 };
 
