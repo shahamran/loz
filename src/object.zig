@@ -2,6 +2,7 @@ const std = @import("std");
 const memory = @import("memory.zig");
 const Chunk = @import("chunk.zig").Chunk;
 const String = @import("string.zig").String;
+const Value = @import("value.zig").Value;
 const vm = @import("vm.zig");
 
 pub const Obj = struct {
@@ -17,6 +18,10 @@ pub const Obj = struct {
         return self.downcast(ObjFunction);
     }
 
+    pub inline fn downcast_native(self: *Obj) *ObjNative {
+        return self.downcast(ObjNative);
+    }
+
     pub inline fn downcast_string(self: *Obj) *ObjString {
         return self.downcast(ObjString);
     }
@@ -28,6 +33,7 @@ pub const Obj = struct {
         return switch (self.kind) {
             // strings are interned, so we can compare them by pointer
             .string => self == other,
+            .native => self == other,
             .function => other.kind == .function and
                 self.downcast_function().name == other.downcast_function().name,
         };
@@ -54,6 +60,32 @@ pub const ObjFunction = struct {
     pub fn deinit(self: *Self) void {
         self.chunk.deinit();
         const f: []Self = self[0..1]; // memory.reallocate expects a slice
+        memory.free(f);
+    }
+
+    pub inline fn upcast(self: *Self) *Obj {
+        return &self.obj;
+    }
+};
+
+pub const ObjNative = struct {
+    const Self = @This();
+    const obj_kind = ObjKind.native;
+    pub const NativeFn = *const fn (u8, [*]Value) Value;
+
+    obj: Obj,
+    arity: u8,
+    function: NativeFn,
+
+    pub fn init(arity: u8, function: NativeFn) !*Self {
+        const fun = try allocate_object(Self);
+        fun.arity = arity;
+        fun.function = function;
+        return fun;
+    }
+
+    pub fn deinit(self: *Self) void {
+        const f: []Self = self[0..1];
         memory.free(f);
     }
 
@@ -108,6 +140,7 @@ pub const ObjString = struct {
 
 pub const ObjKind = enum {
     function,
+    native,
     string,
 };
 

@@ -7,6 +7,7 @@ const Value = @import("value.zig").Value;
 const List = @import("list.zig").List;
 const Obj = @import("object.zig").Obj;
 const ObjFunction = @import("object.zig").ObjFunction;
+const ObjNative = @import("object.zig").ObjNative;
 const ObjString = @import("object.zig").ObjString;
 const Table = @import("table.zig").Table;
 const compiler = @import("compiler.zig");
@@ -78,6 +79,7 @@ pub fn init_vm() void {
     vm.global_names = Table.init();
     vm.global_values = List(Value).init();
     vm.strings = Table.init();
+    define_native("clock", 0, clock_native) catch unreachable;
 }
 
 pub fn deinit_vm() void {
@@ -238,6 +240,17 @@ fn call_value(callee: Value, arg_count: u8) bool {
     switch (callee) {
         .obj => |o| switch (o.kind) {
             .function => return call(o.downcast_function(), arg_count),
+            .native => {
+                const native = o.downcast_native();
+                if (arg_count != native.arity) {
+                    runtime_error("Expected {d} arguments but got {d}.", .{ native.arity, arg_count });
+                    return false;
+                }
+                const result = native.function(arg_count, vm.stack_top - arg_count);
+                vm.stack_top -= arg_count + 1;
+                push(result);
+                return true;
+            },
             else => {},
         },
         else => {},
@@ -323,4 +336,23 @@ fn runtime_error(comptime fmt: []const u8, args: anytype) void {
         }
     }
     reset_stack();
+}
+
+fn define_native(name: []const u8, arity: u8, function: ObjNative.NativeFn) !void {
+    push(.{ .obj = (try ObjString.copy(name)).upcast() });
+    push(.{ .obj = (try ObjNative.init(arity, function)).upcast() });
+    const value = Value{ .number = @floatFromInt(vm.global_values.items.len) };
+    _ = try vm.global_names.insert(vm.stack[0].obj.downcast_string(), value);
+    try vm.global_values.push(vm.stack[1]);
+    _ = pop();
+    _ = pop();
+}
+
+fn clock_native(arg_count: u8, args: [*]Value) Value {
+    _ = arg_count;
+    _ = args;
+    const time = std.time;
+    const timestamp: f64 = @floatFromInt(time.microTimestamp());
+    const us_per_s: f64 = @floatFromInt(time.us_per_s);
+    return Value{ .number = timestamp / us_per_s };
 }

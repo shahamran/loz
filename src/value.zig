@@ -47,6 +47,7 @@ pub fn print_value(val: Value) void {
         .number => |n| std.debug.print("{d}", .{n}),
         .obj => |o| switch (o.kind) {
             .string => std.debug.print("{s}", .{o.downcast_string().value.as_slice()}),
+            .native => std.debug.print("<native fn>", .{}),
             .function => {
                 const fun = o.downcast_function();
                 if (fun.name) |name| {

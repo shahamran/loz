@@ -24,6 +24,7 @@ pub fn free_objects() void {
         const next = o.next;
         switch (o.kind) {
             .string => o.downcast_string().deinit(),
+            .native => o.downcast_native().deinit(),
             .function => o.downcast_function().deinit(),
         }
         object = next;
