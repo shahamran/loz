@@ -1,5 +1,6 @@
 const std = @import("std");
 const Obj = @import("object.zig").Obj;
+const ObjFunction = @import("object.zig").ObjFunction;
 
 pub const Value = union(enum) {
     const Self = @This();
@@ -48,15 +49,17 @@ pub fn print_value(val: Value) void {
         .obj => |o| switch (o.kind) {
             .string => std.debug.print("{s}", .{o.downcast_string().value.as_slice()}),
             .native => std.debug.print("<native fn>", .{}),
-            .function => {
-                const fun = o.downcast_function();
-                if (fun.name) |name| {
-                    std.debug.print("<fn {s}>", .{name.value.as_slice()});
-                } else {
-                    std.debug.print("<script>", .{});
-                }
-            },
+            .closure => print_function(o.downcast_closure().function),
+            .function => print_function(o.downcast_function()),
         },
         .undefined_ => std.debug.print("undefined", .{}),
+    }
+}
+
+fn print_function(fun: *ObjFunction) void {
+    if (fun.name) |name| {
+        std.debug.print("<fn {s}>", .{name.value.as_slice()});
+    } else {
+        std.debug.print("<script>", .{});
     }
 }

@@ -14,6 +14,10 @@ pub const Obj = struct {
         return @alignCast(@fieldParentPtr("obj", self));
     }
 
+    pub inline fn downcast_closure(self: *Obj) *ObjClosure {
+        return self.downcast(ObjClosure);
+    }
+
     pub inline fn downcast_function(self: *Obj) *ObjFunction {
         return self.downcast(ObjFunction);
     }
@@ -31,12 +35,36 @@ pub const Obj = struct {
             return false;
         }
         return switch (self.kind) {
+            .closure => other.kind == .closure and
+                self.downcast_closure().function.obj.eql(&other.downcast_closure().function.obj),
             // strings are interned, so we can compare them by pointer
             .string => self == other,
             .native => self == other,
             .function => other.kind == .function and
                 self.downcast_function().name == other.downcast_function().name,
         };
+    }
+};
+
+pub const ObjClosure = struct {
+    const Self = @This();
+    const obj_kind = ObjKind.closure;
+
+    obj: Obj,
+    function: *ObjFunction,
+
+    pub fn init(function: *ObjFunction) !*Self {
+        const closure = try allocate_object(Self);
+        closure.function = function;
+        return closure;
+    }
+
+    pub fn deinit(self: *Self) void {
+        memory.free(self[0..1]);
+    }
+
+    pub fn upcast(self: *Self) *Obj {
+        return &self.obj;
     }
 };
 
@@ -139,6 +167,7 @@ pub const ObjString = struct {
 };
 
 pub const ObjKind = enum {
+    closure,
     function,
     native,
     string,

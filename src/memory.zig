@@ -25,6 +25,7 @@ pub fn free_objects() void {
         switch (o.kind) {
             .string => o.downcast_string().deinit(),
             .native => o.downcast_native().deinit(),
+            .closure => o.downcast_closure().deinit(),
             .function => o.downcast_function().deinit(),
         }
         object = next;
