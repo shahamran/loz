@@ -282,7 +282,7 @@ fn function(kind: FunctionKind) !void {
 
     const fun = end_compiler();
     const constant = try make_constant(.{ .obj = fun.upcast() });
-    try emit_two(op_u8(.op_constant), @intCast(constant));
+    try emit_two(op_u8(.op_closure), @intCast(constant));
 }
 
 fn expression_statement() !void {

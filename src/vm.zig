@@ -6,6 +6,7 @@ const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
 const List = @import("list.zig").List;
 const Obj = @import("object.zig").Obj;
+const ObjClosure = @import("object.zig").ObjClosure;
 const ObjFunction = @import("object.zig").ObjFunction;
 const ObjNative = @import("object.zig").ObjNative;
 const ObjString = @import("object.zig").ObjString;
@@ -37,7 +38,7 @@ const VM = struct {
 const CallFrame = struct {
     const Self = @This();
 
-    function: *ObjFunction,
+    closure: *ObjClosure,
     ip: [*]u8,
     slots: [*]Value,
 
@@ -55,14 +56,29 @@ const CallFrame = struct {
     }
 
     inline fn read_constant(self: *Self) Value {
-        return self.function.chunk.constants.items[self.read_byte()];
+        return self.constants()[self.read_byte()];
+    }
+
+    inline fn constants(self: *Self) []Value {
+        return self.closure.function.chunk.constants.items;
+    }
+
+    inline fn code(self: *Self) []u8 {
+        return self.closure.function.chunk.code.items;
+    }
+
+    inline fn offset(self: *Self) usize {
+        return self.ip - self.closure.function.chunk.code.items.ptr;
     }
 };
 
 pub fn interpret(source: []const u8) !InterpretResult {
     var function = try compiler.compile(source) orelse return .compile_error;
-    push(Value{ .obj = function.upcast() });
-    _ = call(function, 0);
+    push(.{ .obj = function.upcast() });
+    const closure = try ObjClosure.init(function);
+    _ = pop();
+    push(.{ .obj = closure.upcast() });
+    _ = call(closure, 0);
 
     return try run();
 }
@@ -102,7 +118,7 @@ fn run() !InterpretResult {
             }
             std.debug.print("\n", .{});
             _ = @import("debug.zig")
-                .disassemble_instruction(&frame.function.chunk, frame.ip - frame.function.chunk.code.items.ptr);
+                .disassemble_instruction(&frame.closure.function.chunk, frame.offset());
         }
         const instruction: OpCode = @enumFromInt(frame.read_byte());
         switch (instruction) {
@@ -202,6 +218,11 @@ fn run() !InterpretResult {
                 }
                 frame = &vm.frames[vm.frame_count - 1];
             },
+            .op_closure => {
+                const function = frame.read_constant().obj.downcast_function();
+                const closure = try ObjClosure.init(function);
+                push(.{ .obj = closure.upcast() });
+            },
             .op_return => {
                 const result = pop();
                 vm.frame_count -= 1;
@@ -239,7 +260,7 @@ fn peek(distance: usize) Value {
 fn call_value(callee: Value, arg_count: u8) bool {
     switch (callee) {
         .obj => |o| switch (o.kind) {
-            .function => return call(o.downcast_function(), arg_count),
+            .closure => return call(o.downcast_closure(), arg_count),
             .native => {
                 const native = o.downcast_native();
                 if (arg_count != native.arity) {
@@ -259,9 +280,9 @@ fn call_value(callee: Value, arg_count: u8) bool {
     return false;
 }
 
-fn call(function: *ObjFunction, arg_count: u8) bool {
-    if (arg_count != function.arity) {
-        runtime_error("Expected {d} arguments but got {d}.", .{ function.arity, arg_count });
+fn call(closure: *ObjClosure, arg_count: u8) bool {
+    if (arg_count != closure.function.arity) {
+        runtime_error("Expected {d} arguments but got {d}.", .{ closure.function.arity, arg_count });
         return false;
     }
     if (vm.frame_count == VM.FRAMES_MAX) {
@@ -270,8 +291,8 @@ fn call(function: *ObjFunction, arg_count: u8) bool {
     }
     var frame = &vm.frames[vm.frame_count];
     vm.frame_count += 1;
-    frame.function = function;
-    frame.ip = function.chunk.code.items.ptr;
+    frame.closure = closure;
+    frame.ip = closure.function.chunk.code.items.ptr;
     frame.slots = vm.stack_top - arg_count - 1;
     return true;
 }
@@ -325,8 +346,8 @@ fn runtime_error(comptime fmt: []const u8, args: anytype) void {
     while (i > 0) {
         i -= 1;
         const frame = &vm.frames[i];
-        const function = frame.function;
-        const instruction = frame.ip - function.chunk.code.items.ptr - 1;
+        const function = frame.closure.function;
+        const instruction = frame.offset() - 1;
         const line = function.chunk.get_line(instruction);
         std.debug.print("[line {d}] in ", .{line});
         if (function.name) |name| {
