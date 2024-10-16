@@ -74,12 +74,14 @@ pub const ObjFunction = struct {
 
     obj: Obj,
     arity: u8,
+    upvalue_count: u8,
     chunk: Chunk,
     name: ?*ObjString,
 
     pub fn init() !*Self {
         const fun = try allocate_object(Self);
         fun.arity = 0;
+        fun.upvalue_count = 0;
         fun.chunk = Chunk.init();
         fun.name = null;
         return fun;

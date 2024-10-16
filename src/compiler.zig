@@ -31,6 +31,7 @@ const Compiler = struct {
     kind: FunctionKind,
     locals: [UINT8_COUNT]Local,
     local_count: u8,
+    upvalues: [UINT8_COUNT]Upvalue,
     scope_depth: u8,
 
     fn init(compiler: *Self, kind: FunctionKind) !void {
@@ -60,6 +61,11 @@ const FunctionKind = enum {
 const Local = struct {
     name: scanner.Token,
     depth: ?u8,
+};
+
+const Upvalue = struct {
+    index: u8,
+    is_local: bool,
 };
 
 const Precedence = enum {
@@ -283,6 +289,11 @@ fn function(kind: FunctionKind) !void {
     const fun = end_compiler();
     const constant = try make_constant(.{ .obj = fun.upcast() });
     try emit_two(op_u8(.op_closure), @intCast(constant));
+
+    for (0..fun.upvalue_count) |i| {
+        try emit_byte(if (compiler.upvalues[i].is_local) 1 else 0);
+        try emit_byte(compiler.upvalues[i].index);
+    }
 }
 
 fn expression_statement() !void {
@@ -403,13 +414,49 @@ fn resolve_local(compiler: *const Compiler, name: *const scanner.Token) ?u8 {
     return null;
 }
 
+fn resolve_upvalue(compiler: *Compiler, name: *const scanner.Token) ?u8 {
+    const enclosing = compiler.enclosing orelse return null;
+    if (resolve_local(enclosing, name)) |local| {
+        return add_upvalue(compiler, local, true);
+    }
+    if (resolve_upvalue(enclosing, name)) |upvalue| {
+        return add_upvalue(compiler, upvalue, false);
+    }
+    return null;
+}
+
+fn add_upvalue(compiler: *Compiler, index: u8, is_local: bool) u8 {
+    const upvalue_count = compiler.function.upvalue_count;
+    // see if there's an existing upvalue with the same values
+    for (0..upvalue_count) |i| {
+        const upvalue = &compiler.upvalues[i];
+        if (upvalue.index == index and upvalue.is_local == is_local) {
+            return @intCast(i);
+        }
+    }
+    if (upvalue_count == std.math.maxInt(u8)) {
+        error_("Too many closure variables in function.");
+        return 0;
+    }
+    // create a new upvalue
+    compiler.upvalues[upvalue_count].is_local = is_local;
+    compiler.upvalues[upvalue_count].index = index;
+    compiler.function.upvalue_count += 1;
+    return upvalue_count;
+}
+
 fn named_variable(name: scanner.Token, can_assign: bool) !void {
-    var arg = resolve_local(current, &name);
+    var arg: u8 = undefined;
     var get_op: OpCode = undefined;
     var set_op: OpCode = undefined;
-    if (arg != null) {
+    if (resolve_local(current, &name)) |local| {
+        arg = local;
         get_op = .op_get_local;
         set_op = .op_set_local;
+    } else if (resolve_upvalue(current, &name)) |upvalue| {
+        arg = upvalue;
+        get_op = .op_get_upvalue;
+        set_op = .op_set_upvalue;
     } else {
         arg = try identifier_constant(&name);
         get_op = .op_get_global;
@@ -417,9 +464,9 @@ fn named_variable(name: scanner.Token, can_assign: bool) !void {
     }
     if (can_assign and match(.equal)) {
         try expression();
-        try emit_two(op_u8(set_op), arg.?);
+        try emit_two(op_u8(set_op), arg);
     } else {
-        try emit_two(op_u8(get_op), arg.?);
+        try emit_two(op_u8(get_op), arg);
     }
 }
 

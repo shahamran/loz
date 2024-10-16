@@ -31,6 +31,8 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
         .op_get_global => return byte_instruction("OP_GET_GLOBAL", chunk, offset),
         .op_define_global => return byte_instruction("OP_DEFINE_GLOBAL", chunk, offset),
         .op_set_global => return byte_instruction("OP_SET_GLOBAL", chunk, offset),
+        .op_get_upvalue => return byte_instruction("OP_GET_UPVALUE", chunk, offset),
+        .op_set_upvalue => return byte_instruction("OP_SET_UPVALUE", chunk, offset),
         .op_equal => return simple_instruction("OP_EQUAL", offset),
         .op_greater => return simple_instruction("OP_GREATER", offset),
         .op_less => return simple_instruction("OP_LESS", offset),
@@ -47,10 +49,21 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
         .op_call => return byte_instruction("OP_CALL", chunk, offset),
         .op_closure => {
             const constant = chunk.code.items[offset + 1];
+            var i = offset + 2;
             std.debug.print("{s: <16} {d: >4} ", .{ "OP_CLOSURE", constant });
             print_value(chunk.constants.items[constant]);
             std.debug.print("\n", .{});
-            return offset + 2;
+            const function = chunk.constants.items[constant].obj.downcast_function();
+            for (0..function.upvalue_count) |_| {
+                const is_local = chunk.code.items[i] == 1;
+                const index = chunk.code.items[i + 1];
+                std.debug.print(
+                    "{d:0>4}      |                     {s} {d}\n",
+                    .{ i, if (is_local) "local" else "upvalue", index },
+                );
+                i += 2;
+            }
+            return i;
         },
         .op_return => return simple_instruction("OP_RETURN", offset),
     }

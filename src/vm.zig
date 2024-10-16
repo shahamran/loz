@@ -157,6 +157,8 @@ fn run() !InterpretResult {
                 }
                 vm.global_values.items[index] = peek(0);
             },
+            .op_get_upvalue => {},
+            .op_set_upvalue => {},
             .op_equal => {
                 const b = pop();
                 const a = pop();
