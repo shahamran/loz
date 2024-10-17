@@ -14,7 +14,6 @@ const ObjUpvalue = @import("object.zig").ObjUpvalue;
 const Table = @import("table.zig").Table;
 const compiler = @import("compiler.zig");
 const print_value = @import("value.zig").print_value;
-const get_line = @import("debug.zig").get_line;
 const memory = @import("memory.zig");
 
 const UINT8_COUNT = std.math.maxInt(u8) + 1;

@@ -13,8 +13,8 @@ pub fn disassemble_chunk(chunk: *const Chunk, name: []const u8) void {
 
 pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
     std.debug.print("{d:0>4} ", .{offset});
-    const line = get_line(chunk, offset);
-    if (offset > 0 and line == get_line(chunk, offset - 1)) {
+    const line = chunk.get_line(offset);
+    if (offset > 0 and line == chunk.get_line(offset - 1)) {
         std.debug.print("   | ", .{});
     } else {
         std.debug.print("{d: >4} ", .{line});
@@ -101,14 +101,4 @@ fn jump_instruction(name: []const u8, direction: Direction, chunk: *const Chunk,
     jump = if (direction == .forward) offset + 3 + jump else offset + 3 - jump;
     std.debug.print("{s: <16} {d: >4} -> {d}\n", .{ name, offset, jump });
     return offset + 3;
-}
-
-pub fn get_line(chunk: *const Chunk, offset: usize) usize {
-    // TODO: binary search
-    for (chunk.lines.items, 0..) |line, i| {
-        if (line.start > offset) {
-            return chunk.lines.items[i - 1].line;
-        }
-    }
-    return chunk.lines.last().line;
 }

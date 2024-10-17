@@ -17,7 +17,7 @@ pub const Value = union(enum) {
             .nil => return other == .nil,
             .number => |n| return @as(?f64, n) == other.as_number(),
             .obj => |o| return o.eql(other.as_object() orelse return false),
-            .undefined_ => unreachable,
+            .undefined_ => unreachable, // probably?
         }
     }
 
@@ -51,6 +51,7 @@ pub fn print_value(val: Value) void {
             .native => std.debug.print("<native fn>", .{}),
             .closure => print_function(o.downcast_closure().function),
             .function => print_function(o.downcast_function()),
+            // probably unreachable
             .upvalue => std.debug.print("upvalue", .{}),
         },
         .undefined_ => std.debug.print("undefined", .{}),
