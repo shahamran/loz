@@ -36,7 +36,7 @@ const Compiler = struct {
 
     fn init(compiler: *Self, kind: FunctionKind) !void {
         compiler.enclosing = current;
-        compiler.function = undefined;
+        compiler.function = undefined; // clox uses NULL, but I don't wanna have ?* type
         compiler.kind = kind;
         compiler.local_count = 0;
         compiler.scope_depth = 0;
@@ -106,7 +106,7 @@ const Precedence = enum {
 pub fn compile(source: []const u8) !?*object.ObjFunction {
     scanner.init_scanner(source);
     var compiler: Compiler = undefined;
-    try Compiler.init(&compiler, .script);
+    try compiler.init(.script);
     parser.had_error = false;
     parser.panic_mode = false;
     string_constants = Table.init();
