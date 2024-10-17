@@ -65,6 +65,7 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
             }
             return i;
         },
+        .op_close_upvalue => return simple_instruction("OP_CLOSE_UPVALUE", offset),
         .op_return => return simple_instruction("OP_RETURN", offset),
     }
     std.debug.print("Unknown opcode {}\n", .{chunk.code[offset]});

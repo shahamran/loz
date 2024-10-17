@@ -98,10 +98,14 @@ pub const ObjUpvalue = struct {
 
     obj: Obj,
     location: *Value,
+    closed: Value,
+    next: ?*ObjUpvalue,
 
     pub fn init(slot: *Value) !*Self {
         const upvalue = try allocate_object(Self);
         upvalue.location = slot;
+        upvalue.closed = .nil;
+        upvalue.next = null;
         return upvalue;
     }
 

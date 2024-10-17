@@ -34,6 +34,7 @@ const VM = struct {
     global_names: Table, // maps global variable names to their indices in the globals array
     global_values: List(Value),
     strings: Table, // interned strings
+    open_upvalues: ?*ObjUpvalue, // linked list of open upvalues
 };
 
 const CallFrame = struct {
@@ -241,8 +242,13 @@ fn run() !InterpretResult {
                     }
                 }
             },
+            .op_close_upvalue => {
+                close_upvalues(&(vm.stack_top - 1)[0]);
+                _ = pop();
+            },
             .op_return => {
                 const result = pop();
+                close_upvalues(&frame.slots[0]);
                 vm.frame_count -= 1;
                 if (vm.frame_count == 0) {
                     _ = pop();
@@ -259,6 +265,7 @@ fn run() !InterpretResult {
 fn reset_stack() void {
     vm.stack_top = &vm.stack;
     vm.frame_count = 0;
+    vm.open_upvalues = null;
 }
 
 fn push(value: Value) void {
@@ -299,8 +306,33 @@ fn call_value(callee: Value, arg_count: u8) bool {
 }
 
 fn capture_upvalue(local: *Value) !*ObjUpvalue {
+    var prev_upvalue: ?*ObjUpvalue = null;
+    var upvalue = vm.open_upvalues;
+    while (upvalue != null and upvalue.?.location - local > 0) {
+        prev_upvalue = upvalue;
+        upvalue = upvalue.?.next;
+    }
+    if (upvalue != null and upvalue.?.location == local) {
+        return upvalue.?;
+    }
     const created_upvalue = try ObjUpvalue.init(local);
+    created_upvalue.next = upvalue;
+    if (prev_upvalue) |v| {
+        v.next = created_upvalue;
+    } else {
+        vm.open_upvalues = created_upvalue;
+    }
     return created_upvalue;
+}
+
+fn close_upvalues(last: *Value) void {
+    while (vm.open_upvalues) |upvalue| {
+        // same as while condition having: upvalue.location >= last
+        if (last - upvalue.location > 0) break;
+        upvalue.closed = upvalue.location.*;
+        upvalue.location = &upvalue.closed;
+        vm.open_upvalues = upvalue.next;
+    }
 }
 
 fn call(closure: *ObjClosure, arg_count: u8) bool {

@@ -49,6 +49,7 @@ const Compiler = struct {
         const local = &current.locals[current.local_count];
         current.local_count += 1;
         local.depth = 0;
+        local.is_captured = false;
         local.name.text = "";
     }
 };
@@ -61,6 +62,7 @@ const FunctionKind = enum {
 const Local = struct {
     name: scanner.Token,
     depth: ?u8,
+    is_captured: bool,
 };
 
 const Upvalue = struct {
@@ -381,6 +383,7 @@ fn add_local(name: scanner.Token) void {
     current.local_count += 1;
     local.name = name;
     local.depth = null;
+    local.is_captured = false;
 }
 
 fn parse_variable(error_message: []const u8) !u8 {
@@ -417,6 +420,7 @@ fn resolve_local(compiler: *const Compiler, name: *const scanner.Token) ?u8 {
 fn resolve_upvalue(compiler: *Compiler, name: *const scanner.Token) ?u8 {
     const enclosing = compiler.enclosing orelse return null;
     if (resolve_local(enclosing, name)) |local| {
+        enclosing.locals[local].is_captured = true;
         return add_upvalue(compiler, local, true);
     }
     if (resolve_upvalue(enclosing, name)) |upvalue| {
@@ -612,7 +616,11 @@ fn end_scope() !void {
         current.locals[current.local_count - 1].depth orelse 0 >
         current.scope_depth)
     {
-        try emit_byte(op_u8(.op_pop));
+        if (current.locals[current.local_count - 1].is_captured) {
+            try emit_byte(op_u8(.op_close_upvalue));
+        } else {
+            try emit_byte(op_u8(.op_pop));
+        }
         current.local_count -= 1;
     }
 }
