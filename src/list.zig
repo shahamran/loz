@@ -74,7 +74,7 @@ test "list" {
     {
         var list = List(i32).init();
         defer list.deinit();
-        try list.reserve(10);
+        try list.reserve(8);
         try expectEqual(16, list.capacity);
     }
     // reserve small
@@ -82,6 +82,8 @@ test "list" {
         var list = List(i32).init();
         defer list.deinit();
         try list.reserve(5);
+        try expectEqual(8, list.capacity);
+        try list.reserve(8);
         try expectEqual(8, list.capacity);
     }
     // push and pop
