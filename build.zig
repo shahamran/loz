@@ -11,9 +11,21 @@ pub fn build(b: *std.Build) void {
         "trace_execution",
         "Print each instruction before executing",
     ) orelse false;
+    const stress_gc = b.option(
+        bool,
+        "stress_gc",
+        "Run GC after each reallocation",
+    ) orelse false;
+    const log_gc = b.option(
+        bool,
+        "log_gc",
+        "Print GC info",
+    ) orelse false;
     const options = b.addOptions();
     options.addOption(bool, "print_code", print_code);
     options.addOption(bool, "trace_execution", trace_execution);
+    options.addOption(bool, "stress_gc", stress_gc);
+    options.addOption(bool, "log_gc", log_gc);
 
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});

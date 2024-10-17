@@ -1,4 +1,5 @@
 const std = @import("std");
+const config = @import("config");
 const memory = @import("memory.zig");
 const Chunk = @import("chunk.zig").Chunk;
 const String = @import("string.zig").String;
@@ -10,6 +11,9 @@ pub const Obj = struct {
     next: ?*Obj,
 
     pub fn deinit(self: *Obj) void {
+        if (config.log_gc) {
+            std.debug.print("{*} free type {s}\n", .{ self, @tagName(self.kind) });
+        }
         switch (self.kind) {
             .closure => self.downcast_closure().deinit(),
             .string => self.downcast_string().deinit(),
@@ -233,6 +237,12 @@ fn allocate_object(comptime T: type) !*T {
     // update the linked list of objects
     ptr.obj = .{ .kind = T.obj_kind, .next = vm.vm.objects };
     vm.vm.objects = ptr.upcast();
+    if (config.log_gc) {
+        std.debug.print(
+            "{*} allocate {d} for {s}\n",
+            .{ ptr, @sizeOf(T), @tagName(T.obj_kind) },
+        );
+    }
     return ptr;
 }
 
