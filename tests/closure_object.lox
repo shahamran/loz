@@ -1,0 +1,26 @@
+// my implementation of "poor man's object" using closures.
+
+fun Vector(x, y) {
+    fun add(other) {
+        return Vector(x + other("x"), y + other("y"));
+    }
+    fun getter(f) {
+        if (f == "x")
+            return x;
+        else if (f == "y")
+            return y;
+        else if (f == "+")
+            return add;
+        else {
+            print "invalid vector property: " + f;
+            return 1 + "error";
+        }
+    }
+    return getter;
+}
+
+var v = Vector(1, 2)("+")(Vector(-3, 4));
+print "x =";
+print v("x");
+print "y =";
+print v("y");
