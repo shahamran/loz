@@ -63,40 +63,57 @@ pub fn List(comptime T: type) type {
     };
 }
 
-test "list" {
-    const expectEqual = std.testing.expectEqual;
-    // deinit empty list
-    {
-        var list = List(i32).init();
-        list.deinit();
-    }
-    // reserve
-    {
-        var list = List(i32).init();
-        defer list.deinit();
-        try list.reserve(8);
-        try expectEqual(16, list.capacity);
-    }
-    // reserve small
-    {
-        var list = List(i32).init();
-        defer list.deinit();
-        try list.reserve(5);
-        try expectEqual(8, list.capacity);
-        try list.reserve(8);
-        try expectEqual(8, list.capacity);
-    }
-    // push and pop
-    {
-        var list = List(i32).init();
-        defer list.deinit();
-        try list.push(1);
-        try list.push(2);
-        try list.push(3);
-        try expectEqual(3, list.items.len);
-        try expectEqual(3, list.pop());
-        try expectEqual(2, list.pop());
-        try expectEqual(1, list.pop());
-        try expectEqual(0, list.items.len);
-    }
+const expectEqual = std.testing.expectEqual;
+
+test "list deinit empty" {
+    var list = List(i32).init();
+    list.deinit();
+}
+
+test "list reserve" {
+    var list = List(i32).init();
+    defer list.deinit();
+    try list.reserve(8);
+    try expectEqual(16, list.capacity);
+}
+
+test "list reserve small" {
+    var list = List(i32).init();
+    defer list.deinit();
+    try list.reserve(5);
+    try expectEqual(8, list.capacity);
+    try list.reserve(8);
+    try expectEqual(8, list.capacity);
+}
+
+test "list push pop" {
+    var list = List(i32).init();
+    defer list.deinit();
+    try list.push(1);
+    try list.push(2);
+    try list.push(3);
+    try expectEqual(3, list.items.len);
+    try expectEqual(3, list.pop());
+    try expectEqual(2, list.pop());
+    try expectEqual(1, list.pop());
+    try expectEqual(0, list.items.len);
+}
+
+test "list eql" {
+    var list1 = List(u8).init();
+    var list2 = List(u8).init();
+    defer list1.deinit();
+    defer list2.deinit();
+    try list1.reserve(16); // to make the lists capacity differ
+    try list1.push(11);
+    try list1.push(12);
+    try list1.push(13);
+
+    try list2.push(11);
+    try list2.push(12);
+    try list2.push(13);
+    try list2.push(14);
+    try std.testing.expect(!list1.eql(&list2));
+    _ = list2.pop();
+    try std.testing.expect(list1.eql(&list2));
 }
