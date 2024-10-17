@@ -1,6 +1,5 @@
 const std = @import("std");
 const memory = @import("memory.zig");
-const grow_capacity = @import("list.zig").grow_capacity;
 const ObjString = @import("object.zig").ObjString;
 const Value = @import("value.zig").Value;
 
@@ -29,7 +28,7 @@ pub const Table = struct {
 
     pub fn insert(self: *Self, key: *ObjString, value: Value) !bool {
         if (self.count + 1 > self.max_size()) {
-            const new_capacity = grow_capacity(self.entries.len);
+            const new_capacity = memory.grow_capacity(self.entries.len);
             try self.adjust_capacity(new_capacity);
         }
         const entry = find_entry(self.entries, key);
