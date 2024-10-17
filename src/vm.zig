@@ -243,12 +243,12 @@ fn run() !InterpretResult {
                 }
             },
             .op_close_upvalue => {
-                close_upvalues(&(vm.stack_top - 1)[0]);
+                close_upvalues(vm.stack_top - 1);
                 _ = pop();
             },
             .op_return => {
                 const result = pop();
-                close_upvalues(&frame.slots[0]);
+                close_upvalues(frame.slots);
                 vm.frame_count -= 1;
                 if (vm.frame_count == 0) {
                     _ = pop();
@@ -308,7 +308,7 @@ fn call_value(callee: Value, arg_count: u8) bool {
 fn capture_upvalue(local: *Value) !*ObjUpvalue {
     var prev_upvalue: ?*ObjUpvalue = null;
     var upvalue = vm.open_upvalues;
-    while (upvalue != null and upvalue.?.location - local > 0) {
+    while (upvalue != null and @intFromPtr(upvalue.?.location) > @intFromPtr(local)) {
         prev_upvalue = upvalue;
         upvalue = upvalue.?.next;
     }
@@ -325,10 +325,10 @@ fn capture_upvalue(local: *Value) !*ObjUpvalue {
     return created_upvalue;
 }
 
-fn close_upvalues(last: *Value) void {
+fn close_upvalues(last: [*]Value) void {
     while (vm.open_upvalues) |upvalue| {
         // same as while condition having: upvalue.location >= last
-        if (last - upvalue.location > 0) break;
+        if (@intFromPtr(last) > @intFromPtr(upvalue.location)) break;
         upvalue.closed = upvalue.location.*;
         upvalue.location = &upvalue.closed;
         vm.open_upvalues = upvalue.next;
