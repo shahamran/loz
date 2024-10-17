@@ -22,12 +22,7 @@ pub fn free_objects() void {
     var object = vm.vm.objects;
     while (object) |o| {
         const next = o.next;
-        switch (o.kind) {
-            .string => o.downcast_string().deinit(),
-            .native => o.downcast_native().deinit(),
-            .closure => o.downcast_closure().deinit(),
-            .function => o.downcast_function().deinit(),
-        }
+        o.deinit();
         object = next;
     }
 }

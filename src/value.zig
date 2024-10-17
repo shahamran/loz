@@ -51,6 +51,7 @@ pub fn print_value(val: Value) void {
             .native => std.debug.print("<native fn>", .{}),
             .closure => print_function(o.downcast_closure().function),
             .function => print_function(o.downcast_function()),
+            .upvalue => std.debug.print("upvalue", .{}),
         },
         .undefined_ => std.debug.print("undefined", .{}),
     }

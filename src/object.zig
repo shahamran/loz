@@ -9,6 +9,16 @@ pub const Obj = struct {
     kind: ObjKind,
     next: ?*Obj,
 
+    pub fn deinit(self: *Obj) void {
+        switch (self.kind) {
+            .closure => self.downcast_closure().deinit(),
+            .string => self.downcast_string().deinit(),
+            .native => self.downcast_native().deinit(),
+            .function => self.downcast_function().deinit(),
+            .upvalue => self.downcast_upvalue().deinit(),
+        }
+    }
+
     pub inline fn downcast(self: *Obj, comptime T: type) *T {
         std.debug.assert(self.kind == T.obj_kind);
         return @alignCast(@fieldParentPtr("obj", self));
@@ -30,6 +40,10 @@ pub const Obj = struct {
         return self.downcast(ObjString);
     }
 
+    pub inline fn downcast_upvalue(self: *Obj) *ObjUpvalue {
+        return self.downcast(ObjUpvalue);
+    }
+
     pub fn eql(self: *Obj, other: *Obj) bool {
         if (self.kind != other.kind) {
             return false;
@@ -42,6 +56,8 @@ pub const Obj = struct {
             .native => self == other,
             .function => other.kind == .function and
                 self.downcast_function().name == other.downcast_function().name,
+            .upvalue => other.kind == .upvalue and
+                self.downcast_upvalue().location.eql(other.downcast_upvalue().location.*),
         };
     }
 };
@@ -52,18 +68,48 @@ pub const ObjClosure = struct {
 
     obj: Obj,
     function: *ObjFunction,
+    upvalues: []?*ObjUpvalue,
 
     pub fn init(function: *ObjFunction) !*Self {
+        var upvalues: []?*ObjUpvalue = &[_]?*ObjUpvalue{};
+        upvalues = try memory.reallocate(upvalues, function.upvalue_count);
+        for (0..function.upvalue_count) |i| {
+            upvalues[i] = null;
+        }
         const closure = try allocate_object(Self);
         closure.function = function;
+        closure.upvalues = upvalues;
         return closure;
+    }
+
+    pub fn deinit(self: *Self) void {
+        memory.free(self.upvalues);
+        memory.free(self[0..1]);
+    }
+
+    pub fn upcast(self: *Self) *Obj {
+        return &self.obj;
+    }
+};
+
+pub const ObjUpvalue = struct {
+    const Self = @This();
+    const obj_kind = ObjKind.upvalue;
+
+    obj: Obj,
+    location: *Value,
+
+    pub fn init(slot: *Value) !*Self {
+        const upvalue = try allocate_object(Self);
+        upvalue.location = slot;
+        return upvalue;
     }
 
     pub fn deinit(self: *Self) void {
         memory.free(self[0..1]);
     }
 
-    pub fn upcast(self: *Self) *Obj {
+    pub inline fn upcast(self: *Self) *Obj {
         return &self.obj;
     }
 };
@@ -173,6 +219,7 @@ pub const ObjKind = enum {
     function,
     native,
     string,
+    upvalue,
 };
 
 fn allocate_object(comptime T: type) !*T {

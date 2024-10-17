@@ -10,6 +10,7 @@ const ObjClosure = @import("object.zig").ObjClosure;
 const ObjFunction = @import("object.zig").ObjFunction;
 const ObjNative = @import("object.zig").ObjNative;
 const ObjString = @import("object.zig").ObjString;
+const ObjUpvalue = @import("object.zig").ObjUpvalue;
 const Table = @import("table.zig").Table;
 const compiler = @import("compiler.zig");
 const print_value = @import("value.zig").print_value;
@@ -157,8 +158,14 @@ fn run() !InterpretResult {
                 }
                 vm.global_values.items[index] = peek(0);
             },
-            .op_get_upvalue => {},
-            .op_set_upvalue => {},
+            .op_get_upvalue => {
+                const slot = frame.read_byte();
+                push(frame.closure.upvalues[slot].?.location.*);
+            },
+            .op_set_upvalue => {
+                const slot = frame.read_byte();
+                frame.closure.upvalues[slot].?.location.* = peek(0);
+            },
             .op_equal => {
                 const b = pop();
                 const a = pop();
@@ -224,6 +231,15 @@ fn run() !InterpretResult {
                 const function = frame.read_constant().obj.downcast_function();
                 const closure = try ObjClosure.init(function);
                 push(.{ .obj = closure.upcast() });
+                for (closure.upvalues) |*upvalue| {
+                    const is_local = frame.read_byte();
+                    const index = frame.read_byte();
+                    if (is_local == 1) {
+                        upvalue.* = try capture_upvalue(&frame.slots[index]);
+                    } else {
+                        upvalue.* = frame.closure.upvalues[index];
+                    }
+                }
             },
             .op_return => {
                 const result = pop();
@@ -280,6 +296,11 @@ fn call_value(callee: Value, arg_count: u8) bool {
     }
     runtime_error("Can only call functions and classes.", .{});
     return false;
+}
+
+fn capture_upvalue(local: *Value) !*ObjUpvalue {
+    const created_upvalue = try ObjUpvalue.init(local);
+    return created_upvalue;
 }
 
 fn call(closure: *ObjClosure, arg_count: u8) bool {
