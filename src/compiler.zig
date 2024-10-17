@@ -275,10 +275,10 @@ fn function(kind: FunctionKind) !void {
     consume(.left_paren, "Expected '(' after function name.");
     if (!check(.right_paren)) {
         while (true) {
-            current.function.arity += 1;
-            if (current.function.arity > 255) {
+            if (current.function.arity == 255) {
                 error_at_current("Can't have more than 255 parameters.");
             }
+            current.function.arity += 1;
             const constant = try parse_variable("Expected parameter name.");
             try define_variable(constant);
             if (!match(.comma)) break;
