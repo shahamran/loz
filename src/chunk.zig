@@ -40,6 +40,7 @@ pub const Chunk = struct {
 
     pub fn get_line(self: *const Self, offset: usize) usize {
         // TODO: binary search
+        std.debug.assert(self.lines.items.len > 0);
         for (self.lines.items, 0..) |line, i| {
             if (line.start > offset) {
                 return self.lines.items[i - 1].line;
@@ -86,12 +87,16 @@ pub const LineInfo = struct {
     start: usize,
 };
 
-test "write" {
-    const expect_eq = std.testing.expectEqual;
+test "basic" {
+    const expectEqual = std.testing.expectEqual;
     var chunk = Chunk.init();
     defer chunk.deinit();
     try chunk.write(@intFromEnum(OpCode.op_return), 123);
     const actual: OpCode = @enumFromInt(chunk.code.items[0]);
-    try expect_eq(actual, .op_return);
-    try expect_eq(chunk.get_line(0), 123);
+    try expectEqual(.op_return, actual);
+    try expectEqual(123, chunk.get_line(0));
+    var constant = try chunk.add_constant(.{ .number = 42.0 });
+    try expectEqual(0, constant);
+    constant = try chunk.add_constant(.{ .bool_ = true });
+    try expectEqual(1, constant);
 }
