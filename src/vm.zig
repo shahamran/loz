@@ -12,6 +12,7 @@ const ObjNative = @import("object.zig").ObjNative;
 const ObjString = @import("object.zig").ObjString;
 const ObjUpvalue = @import("object.zig").ObjUpvalue;
 const Table = @import("table.zig").Table;
+const allocator = @import("main.zig").allocator;
 const compiler = @import("compiler.zig");
 const print_value = @import("value.zig").print_value;
 const memory = @import("memory.zig");
@@ -34,6 +35,7 @@ const VM = struct {
     global_values: List(Value),
     strings: Table, // interned strings
     open_upvalues: ?*ObjUpvalue, // linked list of open upvalues
+    gray_stack: std.ArrayList(*Obj),
 };
 
 const CallFrame = struct {
@@ -96,6 +98,7 @@ pub fn init_vm() void {
     vm.global_names = Table.init();
     vm.global_values = List(Value).init();
     vm.strings = Table.init();
+    vm.gray_stack = std.ArrayList(*Obj).init(allocator);
     define_native("clock", 0, clock_native) catch unreachable;
 }
 

@@ -8,6 +8,7 @@ const vm = @import("vm.zig");
 
 pub const Obj = struct {
     kind: ObjKind,
+    is_marked: bool = false,
     next: ?*Obj,
 
     pub fn deinit(self: *Obj) void {

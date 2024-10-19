@@ -8,6 +8,7 @@ const Table = @import("table.zig").Table;
 const config = @import("config");
 const object = @import("object.zig");
 const vm = @import("vm.zig");
+const memory = @import("memory.zig");
 
 const UINT8_COUNT = std.math.maxInt(u8) + 1;
 
@@ -117,6 +118,14 @@ pub fn compile(source: []const u8) !?*object.ObjFunction {
     }
     const fun = end_compiler();
     return if (parser.had_error) null else fun;
+}
+
+pub fn mark_compiler_roots() void {
+    var compiler: ?*Compiler = current;
+    while (compiler) |c| {
+        memory.mark_object(c.function.upcast());
+        compiler = c.enclosing;
+    }
 }
 
 fn declaration() !void {
