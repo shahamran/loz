@@ -176,11 +176,13 @@ fn run() !InterpretResult {
             },
             .op_add => {
                 if (peek(0).is_string() and peek(1).is_string()) {
-                    const b = pop().obj.downcast_string();
-                    const a = pop().obj.downcast_string();
+                    const b = peek(0).obj.downcast_string();
+                    const a = peek(1).obj.downcast_string();
                     var result = try a.value.clone();
                     try result.append(b.value.as_slice());
                     const obj = try ObjString.take(&result);
+                    _ = pop();
+                    _ = pop();
                     push(Value{ .obj = obj.upcast() });
                 } else if (peek(0) == .number and peek(1) == .number) {
                     const b = pop().number;
