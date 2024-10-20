@@ -9,6 +9,8 @@ const Table = @import("table.zig").Table;
 const print_value = @import("value.zig").print_value;
 const config = @import("config");
 
+const GC_HEAP_GROW_FACTOR = 2;
+
 pub fn grow_capacity(capacity: usize) usize {
     return if (capacity < 8) 8 else capacity * 2;
 }
@@ -17,8 +19,14 @@ pub fn reallocate(old_mem: anytype, new_n: usize) t: {
     const Slice = @typeInfo(@TypeOf(old_mem)).pointer;
     break :t Error![]Slice.child;
 } {
-    if (new_n > old_mem.len) {
-        if (config.stress_gc) {
+    const old_n = old_mem.len;
+    if (new_n > old_n) {
+        vm.vm.bytes_allocated += new_n - old_n;
+    } else {
+        vm.vm.bytes_allocated -= old_n - new_n;
+    }
+    if (new_n > old_n) {
+        if (config.stress_gc or vm.vm.bytes_allocated > vm.vm.next_gc) {
             collect_garbage();
         }
     }
@@ -40,8 +48,10 @@ pub fn free_objects() void {
 }
 
 fn collect_garbage() void {
+    var before: usize = 0;
     if (config.log_gc) {
         std.debug.print("-- gc begin\n", .{});
+        before = vm.vm.bytes_allocated;
     }
 
     mark_roots();
@@ -49,8 +59,15 @@ fn collect_garbage() void {
     table_remove_white(&vm.vm.strings);
     sweep();
 
+    vm.vm.next_gc = vm.vm.bytes_allocated * GC_HEAP_GROW_FACTOR;
+
     if (config.log_gc) {
         std.debug.print("-- gc end\n", .{});
+        const current = vm.vm.bytes_allocated;
+        std.debug.print(
+            "   collected {d} bytes (from {d} to {d}) next at {d}\n",
+            .{ before - current, before, current, vm.vm.next_gc },
+        );
     }
 }
 

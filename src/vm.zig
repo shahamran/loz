@@ -35,6 +35,8 @@ const VM = struct {
     global_values: List(Value),
     strings: Table, // interned strings
     open_upvalues: ?*ObjUpvalue, // linked list of open upvalues
+    bytes_allocated: usize,
+    next_gc: usize,
     gray_stack: std.ArrayList(*Obj),
 };
 
@@ -95,6 +97,8 @@ pub const InterpretResult = enum {
 pub fn init_vm() void {
     reset_stack();
     vm.objects = null;
+    vm.bytes_allocated = 0;
+    vm.next_gc = 1024 * 1024;
     vm.global_names = Table.init();
     vm.global_values = List(Value).init();
     vm.strings = Table.init();
