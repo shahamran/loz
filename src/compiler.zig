@@ -35,14 +35,14 @@ const Compiler = struct {
     upvalues: [UINT8_COUNT]Upvalue,
     scope_depth: u8,
 
-    fn init(compiler: *Self, kind: FunctionKind) !void {
-        compiler.enclosing = current;
-        compiler.function = undefined; // clox uses NULL, but I don't wanna have ?* type
-        compiler.kind = kind;
-        compiler.local_count = 0;
-        compiler.scope_depth = 0;
-        compiler.function = try object.ObjFunction.init();
-        current = compiler;
+    fn init(self: *Self, kind: FunctionKind) !void {
+        self.enclosing = current;
+        self.function = undefined; // clox uses NULL, but I don't wanna have ?* type
+        self.kind = kind;
+        self.local_count = 0;
+        self.scope_depth = 0;
+        self.function = try object.ObjFunction.init();
+        current = self;
         if (kind != .script) {
             current.function.name = try object.ObjString.copy(parser.previous.text);
         }
