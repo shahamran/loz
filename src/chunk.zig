@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const memory = @import("memory.zig");
+const vm = @import("vm.zig");
 const List = @import("list.zig").List;
 const Value = @import("value.zig").Value;
 
@@ -34,7 +35,9 @@ pub const Chunk = struct {
     }
 
     pub fn add_constant(self: *Self, val: Value) Allocator.Error!usize {
+        vm.push(val);
         try self.constants.push(val);
+        _ = vm.pop();
         return self.constants.items.len - 1;
     }
 

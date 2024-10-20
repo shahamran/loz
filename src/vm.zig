@@ -270,12 +270,12 @@ fn reset_stack() void {
     vm.open_upvalues = null;
 }
 
-fn push(value: Value) void {
+pub fn push(value: Value) void {
     vm.stack_top[0] = value;
     vm.stack_top += 1;
 }
 
-fn pop() Value {
+pub fn pop() Value {
     vm.stack_top -= 1;
     return vm.stack_top[0];
 }

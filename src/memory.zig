@@ -46,6 +46,8 @@ fn collect_garbage() void {
 
     mark_roots();
     trace_references();
+    table_remove_white(&vm.vm.strings);
+    sweep();
 
     if (config.log_gc) {
         std.debug.print("-- gc end\n", .{});
@@ -74,6 +76,27 @@ fn trace_references() void {
     while (vm.vm.gray_stack.items.len > 0) {
         const object = vm.vm.gray_stack.pop();
         blacken_object(object);
+    }
+}
+
+fn sweep() void {
+    var previous: ?*Obj = null;
+    var object = vm.vm.objects;
+    while (object) |obj| {
+        if (obj.is_marked) {
+            obj.is_marked = false;
+            previous = obj;
+            object = obj.next;
+        } else {
+            var unreached = obj;
+            object = obj.next;
+            if (previous) |p| {
+                p.next = object;
+            } else {
+                vm.vm.objects = object;
+            }
+            unreached.deinit();
+        }
     }
 }
 
@@ -114,12 +137,23 @@ pub fn mark_object(object: ?*Obj) void {
         std.debug.print("\n", .{});
     }
     obj.is_marked = true;
-    vm.vm.gray_stack.append(obj) catch std.process.exit(1);
+    // crash and burn if allocating for gray object fails.
+    vm.vm.gray_stack.append(obj) catch unreachable;
 }
 
 fn mark_table(table: *Table) void {
     for (table.entries) |*entry| {
         mark_object(@ptrCast(entry.key));
         mark_value(entry.value);
+    }
+}
+
+fn table_remove_white(table: *Table) void {
+    for (table.entries) |entry| {
+        if (entry.key) |key| {
+            if (!key.obj.is_marked) {
+                _ = table.delete(key);
+            }
+        }
     }
 }

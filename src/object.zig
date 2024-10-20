@@ -217,7 +217,9 @@ pub const ObjString = struct {
         const s = try allocate_object(Self);
         s.value = string;
         s.hash = hash;
+        vm.push(.{ .obj = s.upcast() });
         const is_new = try vm.vm.strings.insert(s, .nil);
+        _ = vm.pop();
         std.debug.assert(is_new);
         return s;
     }
