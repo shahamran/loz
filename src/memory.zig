@@ -5,7 +5,7 @@ const vm = @import("vm.zig");
 const Error = error{OutOfMemory};
 const Obj = @import("Obj.zig");
 const Value = @import("value.zig").Value;
-const Table = @import("table.zig").Table;
+const Table = @import("Table.zig");
 const config = @import("config");
 
 const GC_HEAP_GROW_FACTOR = 2;
