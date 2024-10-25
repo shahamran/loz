@@ -3,10 +3,9 @@ const allocator = @import("main.zig").allocator;
 const compiler = @import("compiler.zig");
 const vm = @import("vm.zig");
 const Error = error{OutOfMemory};
-const Obj = @import("object.zig").Obj;
+const Obj = @import("Obj.zig");
 const Value = @import("value.zig").Value;
 const Table = @import("table.zig").Table;
-const print_value = @import("value.zig").print_value;
 const config = @import("config");
 
 const GC_HEAP_GROW_FACTOR = 2;
@@ -77,11 +76,11 @@ fn mark_roots() void {
         mark_value(slot.*);
     }
     for (0..vm.vm.frame_count) |i| {
-        mark_object(vm.vm.frames[i].closure.upcast());
+        mark_object(&vm.vm.frames[i].closure.obj);
     }
     var upvalue = vm.vm.open_upvalues;
     while (upvalue) |v| {
-        mark_object(v.upcast());
+        mark_object(&v.obj);
         upvalue = v.next;
     }
     mark_table(&vm.vm.global_names);
@@ -123,23 +122,21 @@ fn mark_value(value: Value) void {
 
 fn blacken_object(object: *Obj) void {
     if (config.log_gc) {
-        std.debug.print("{*} blacken ", .{object});
-        print_value(.{ .obj = object });
-        std.debug.print("\n", .{});
+        std.debug.print("{s} blacken {s}\n", .{ object, object.value() });
     }
     switch (object.kind) {
         .closure => {
-            const closure = object.downcast_closure();
-            mark_object(closure.function.upcast());
+            const closure = object.as(Obj.Closure);
+            mark_object(&closure.function.obj);
             for (closure.upvalues) |v|
-                if (v) |upvalue| mark_object(upvalue.upcast());
+                if (v) |upvalue| mark_object(&upvalue.obj);
         },
         .function => {
-            const fun = object.downcast_function();
-            if (fun.name) |s| mark_object(s.upcast());
+            const fun = object.as(Obj.Function);
+            if (fun.name) |s| mark_object(&s.obj);
             for (fun.chunk.constants.items) |constant| mark_value(constant);
         },
-        .upvalue => mark_value(object.downcast_upvalue().closed),
+        .upvalue => mark_value(object.as(Obj.Upvalue).closed),
         .native, .string => {},
     }
 }
@@ -149,9 +146,7 @@ pub fn mark_object(object: ?*Obj) void {
     const obj = object.?;
     if (obj.is_marked) return;
     if (config.log_gc) {
-        std.debug.print("{*} mark ", .{obj});
-        print_value(.{ .obj = obj });
-        std.debug.print("\n", .{});
+        std.debug.print("{s} mark {s}\n", .{ obj, obj.value() });
     }
     obj.is_marked = true;
     // crash and burn if allocating for gray object fails.

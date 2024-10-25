@@ -1,6 +1,5 @@
 const std = @import("std");
-const Obj = @import("object.zig").Obj;
-const ObjFunction = @import("object.zig").ObjFunction;
+const Obj = @import("Obj.zig");
 
 pub const Value = union(enum) {
     const Self = @This();
@@ -39,29 +38,28 @@ pub const Value = union(enum) {
         if (self == .obj) return self.obj;
         return null;
     }
+
+    pub fn format(
+        self: Value,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = fmt;
+        _ = options;
+        try switch (self) {
+            .bool_ => |b| writer.print("{s}", .{if (b) "true" else "false"}),
+            .nil => writer.print("nil", .{}),
+            .number => |n| writer.print("{d}", .{n}),
+            .obj => |o| switch (o.kind) {
+                .string => writer.print("{s}", .{o.as(Obj.String)}),
+                .native => writer.print("<native fn>", .{}),
+                .closure => writer.print("{s}", .{o.as(Obj.Closure).function}),
+                .function => writer.print("{s}", .{o.as(Obj.Function)}),
+                // probably unreachable
+                .upvalue => writer.print("upvalue", .{}),
+            },
+            .undefined_ => writer.print("undefined", .{}),
+        };
+    }
 };
-
-pub fn print_value(val: Value) void {
-    switch (val) {
-        .bool_ => |b| std.debug.print("{s}", .{if (b) "true" else "false"}),
-        .nil => std.debug.print("nil", .{}),
-        .number => |n| std.debug.print("{d}", .{n}),
-        .obj => |o| switch (o.kind) {
-            .string => std.debug.print("{s}", .{o.downcast_string().value.as_slice()}),
-            .native => std.debug.print("<native fn>", .{}),
-            .closure => print_function(o.downcast_closure().function),
-            .function => print_function(o.downcast_function()),
-            // probably unreachable
-            .upvalue => std.debug.print("upvalue", .{}),
-        },
-        .undefined_ => std.debug.print("undefined", .{}),
-    }
-}
-
-fn print_function(fun: *ObjFunction) void {
-    if (fun.name) |name| {
-        std.debug.print("<fn {s}>", .{name.value.as_slice()});
-    } else {
-        std.debug.print("<script>", .{});
-    }
-}

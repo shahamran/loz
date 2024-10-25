@@ -5,16 +5,10 @@ const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
 const List = @import("list.zig").List;
-const Obj = @import("object.zig").Obj;
-const ObjClosure = @import("object.zig").ObjClosure;
-const ObjFunction = @import("object.zig").ObjFunction;
-const ObjNative = @import("object.zig").ObjNative;
-const ObjString = @import("object.zig").ObjString;
-const ObjUpvalue = @import("object.zig").ObjUpvalue;
+const Obj = @import("Obj.zig");
 const Table = @import("table.zig").Table;
 const allocator = @import("main.zig").allocator;
 const compiler = @import("compiler.zig");
-const print_value = @import("value.zig").print_value;
 const memory = @import("memory.zig");
 
 const UINT8_COUNT = std.math.maxInt(u8) + 1;
@@ -34,7 +28,7 @@ const VM = struct {
     global_names: Table, // maps global variable names to their indices in the globals array
     global_values: List(Value),
     strings: Table, // interned strings
-    open_upvalues: ?*ObjUpvalue, // linked list of open upvalues
+    open_upvalues: ?*Obj.Upvalue, // linked list of open upvalues
     bytes_allocated: usize,
     next_gc: usize,
     gray_stack: std.ArrayList(*Obj),
@@ -43,7 +37,7 @@ const VM = struct {
 const CallFrame = struct {
     const Self = @This();
 
-    closure: *ObjClosure,
+    closure: *Obj.Closure,
     ip: [*]u8,
     slots: [*]Value,
 
@@ -79,10 +73,10 @@ const CallFrame = struct {
 
 pub fn interpret(source: []const u8) !InterpretResult {
     var function = try compiler.compile(source) orelse return .compile_error;
-    push(.{ .obj = function.upcast() });
-    const closure = try ObjClosure.init(function);
+    push(function.obj.value());
+    const closure = try Obj.Closure.init(function);
     _ = pop();
-    push(.{ .obj = closure.upcast() });
+    push(closure.obj.value());
     _ = call(closure, 0);
 
     return try run();
@@ -120,9 +114,7 @@ fn run() !InterpretResult {
             std.debug.print("          ", .{});
             var slot: [*]Value = &vm.stack;
             while (slot != vm.stack_top) : (slot += 1) {
-                std.debug.print("[ ", .{});
-                print_value(slot[0]);
-                std.debug.print(" ]", .{});
+                std.debug.print("[ {s} ]", .{slot[0]});
             }
             std.debug.print("\n", .{});
             _ = @import("debug.zig")
@@ -180,14 +172,14 @@ fn run() !InterpretResult {
             },
             .op_add => {
                 if (peek(0).is_string() and peek(1).is_string()) {
-                    const b = peek(0).obj.downcast_string();
-                    const a = peek(1).obj.downcast_string();
+                    const b = peek(0).obj.as(Obj.String);
+                    const a = peek(1).obj.as(Obj.String);
                     var result = try a.value.clone();
                     try result.append(b.value.as_slice());
-                    const obj = try ObjString.take(&result);
+                    const obj = try Obj.String.take(&result);
                     _ = pop();
                     _ = pop();
-                    push(Value{ .obj = obj.upcast() });
+                    push(obj.obj.value());
                 } else if (peek(0) == .number and peek(1) == .number) {
                     const b = pop().number;
                     const a = pop().number;
@@ -213,10 +205,7 @@ fn run() !InterpretResult {
                 }
                 push(Value{ .number = -pop().number });
             },
-            .op_print => {
-                print_value(pop());
-                std.debug.print("\n", .{});
-            },
+            .op_print => std.debug.print("{s}\n", .{pop()}),
             .op_jump => {
                 const offset = frame.read_u16();
                 frame.ip += offset;
@@ -237,9 +226,9 @@ fn run() !InterpretResult {
                 frame = &vm.frames[vm.frame_count - 1];
             },
             .op_closure => {
-                const function = frame.read_constant().obj.downcast_function();
-                const closure = try ObjClosure.init(function);
-                push(.{ .obj = closure.upcast() });
+                const function = frame.read_constant().obj.as(Obj.Function);
+                const closure = try Obj.Closure.init(function);
+                push(closure.obj.value());
                 for (closure.upvalues) |*upvalue| {
                     const is_local = frame.read_byte();
                     const index = frame.read_byte();
@@ -293,11 +282,12 @@ fn peek(distance: usize) Value {
 fn call_value(callee: Value, arg_count: u8) bool {
     switch (callee) {
         .obj => |o| switch (o.kind) {
-            .closure => return call(o.downcast_closure(), arg_count),
+            .closure => return call(o.as(Obj.Closure), arg_count),
             .native => {
-                const native = o.downcast_native();
-                if (arg_count != native.arity) {
-                    runtime_error("Expected {d} arguments but got {d}.", .{ native.arity, arg_count });
+                const native = o.as(Obj.Native);
+                const arity = native.arity;
+                if (arg_count != arity) {
+                    runtime_error("Expected {d} arguments but got {d}.", .{ arity, arg_count });
                     return false;
                 }
                 const result = native.function(arg_count, vm.stack_top - arg_count);
@@ -313,8 +303,8 @@ fn call_value(callee: Value, arg_count: u8) bool {
     return false;
 }
 
-fn capture_upvalue(local: *Value) !*ObjUpvalue {
-    var prev_upvalue: ?*ObjUpvalue = null;
+fn capture_upvalue(local: *Value) !*Obj.Upvalue {
+    var prev_upvalue: ?*Obj.Upvalue = null;
     var upvalue = vm.open_upvalues;
     while (upvalue != null and @intFromPtr(upvalue.?.location) > @intFromPtr(local)) {
         prev_upvalue = upvalue;
@@ -323,8 +313,7 @@ fn capture_upvalue(local: *Value) !*ObjUpvalue {
     if (upvalue != null and upvalue.?.location == local) {
         return upvalue.?;
     }
-    const created_upvalue = try ObjUpvalue.init(local);
-    created_upvalue.next = upvalue;
+    const created_upvalue = try Obj.Upvalue.init(.{ .location = local, .next = upvalue });
     if (prev_upvalue) |v| {
         v.next = created_upvalue;
     } else {
@@ -343,9 +332,10 @@ fn close_upvalues(last: [*]Value) void {
     }
 }
 
-fn call(closure: *ObjClosure, arg_count: u8) bool {
-    if (arg_count != closure.function.arity) {
-        runtime_error("Expected {d} arguments but got {d}.", .{ closure.function.arity, arg_count });
+fn call(closure: *Obj.Closure, arg_count: u8) bool {
+    const arity = closure.function.arity;
+    if (arg_count != arity) {
+        runtime_error("Expected {d} arguments but got {d}.", .{ arity, arg_count });
         return false;
     }
     if (vm.frame_count == VM.FRAMES_MAX) {
@@ -422,11 +412,11 @@ fn runtime_error(comptime fmt: []const u8, args: anytype) void {
     reset_stack();
 }
 
-fn define_native(name: []const u8, arity: u8, function: ObjNative.NativeFn) !void {
-    push(.{ .obj = (try ObjString.copy(name)).upcast() });
-    push(.{ .obj = (try ObjNative.init(arity, function)).upcast() });
+fn define_native(name: []const u8, arity: u8, function: Obj.NativeFn) !void {
+    push((try Obj.String.copy(name)).obj.value());
+    push((try Obj.Native.init(arity, function)).obj.value());
     const value = Value{ .number = @floatFromInt(vm.global_values.items.len) };
-    _ = try vm.global_names.insert(vm.stack[0].obj.downcast_string(), value);
+    _ = try vm.global_names.insert(vm.stack[0].obj.as(Obj.String), value);
     try vm.global_values.push(vm.stack[1]);
     _ = pop();
     _ = pop();

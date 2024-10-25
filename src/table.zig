@@ -1,6 +1,6 @@
 const std = @import("std");
 const memory = @import("memory.zig");
-const ObjString = @import("object.zig").ObjString;
+const Obj = @import("Obj.zig");
 const Value = @import("value.zig").Value;
 
 pub const Table = struct {
@@ -19,14 +19,14 @@ pub const Table = struct {
         self.* = init();
     }
 
-    pub fn get(self: *Self, key: *ObjString) ?Value {
+    pub fn get(self: *Self, key: *Obj.String) ?Value {
         if (self.count == 0) return null;
         const entry = find_entry(self.entries, key);
         if (entry.key == null) return null;
         return entry.value;
     }
 
-    pub fn insert(self: *Self, key: *ObjString, value: Value) !bool {
+    pub fn insert(self: *Self, key: *Obj.String, value: Value) !bool {
         if (self.count + 1 > self.max_size()) {
             const new_capacity = memory.grow_capacity(self.entries.len);
             try self.adjust_capacity(new_capacity);
@@ -39,7 +39,7 @@ pub const Table = struct {
         return is_new_key;
     }
 
-    pub fn delete(self: *Self, key: *ObjString) bool {
+    pub fn delete(self: *Self, key: *Obj.String) bool {
         if (self.count == 0) return false;
         const entry = find_entry(self.entries, key);
         if (entry.key == null) return false;
@@ -49,7 +49,7 @@ pub const Table = struct {
         return true;
     }
 
-    pub fn find_key(self: *const Self, chars: []const u8, hash: u32) ?*ObjString {
+    pub fn find_key(self: *const Self, chars: []const u8, hash: u32) ?*Obj.String {
         if (self.count == 0) return null;
         const capacity = self.entries.len;
         var index = hash % capacity;
@@ -66,7 +66,7 @@ pub const Table = struct {
         }
     }
 
-    fn find_entry(entries: []Entry, key: *ObjString) *Entry {
+    fn find_entry(entries: []Entry, key: *Obj.String) *Entry {
         const capacity = entries.len;
         var index = key.hash % capacity;
         var tombstone: ?*Entry = null;
@@ -121,6 +121,6 @@ pub const Table = struct {
 };
 
 pub const Entry = struct {
-    key: ?*ObjString,
+    key: ?*Obj.String,
     value: Value,
 };

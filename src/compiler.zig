@@ -5,8 +5,8 @@ const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
 const Table = @import("table.zig").Table;
+const Obj = @import("Obj.zig");
 const config = @import("config");
-const object = @import("object.zig");
 const vm = @import("vm.zig");
 const memory = @import("memory.zig");
 
@@ -28,7 +28,7 @@ const Compiler = struct {
     const Self = @This();
 
     enclosing: ?*Self,
-    function: *object.ObjFunction,
+    function: *Obj.Function,
     kind: FunctionKind,
     locals: [UINT8_COUNT]Local,
     local_count: u8,
@@ -41,10 +41,10 @@ const Compiler = struct {
         self.kind = kind;
         self.local_count = 0;
         self.scope_depth = 0;
-        self.function = try object.ObjFunction.init();
+        self.function = try Obj.Function.init();
         current = self;
         if (kind != .script) {
-            current.function.name = try object.ObjString.copy(parser.previous.text);
+            current.function.name = try Obj.String.copy(parser.previous.text);
         }
 
         const local = &current.locals[current.local_count];
@@ -104,7 +104,7 @@ const Precedence = enum {
     }
 };
 
-pub fn compile(source: []const u8) !?*object.ObjFunction {
+pub fn compile(source: []const u8) !?*Obj.Function {
     scanner.init_scanner(source);
     var compiler: Compiler = undefined;
     try compiler.init(.script);
@@ -123,7 +123,7 @@ pub fn compile(source: []const u8) !?*object.ObjFunction {
 pub fn mark_compiler_roots() void {
     var compiler: ?*Compiler = current;
     while (compiler) |c| {
-        memory.mark_object(c.function.upcast());
+        memory.mark_object(&c.function.obj);
         compiler = c.enclosing;
     }
 }
@@ -298,7 +298,7 @@ fn function(kind: FunctionKind) !void {
     try block();
 
     const fun = end_compiler();
-    const constant = try make_constant(.{ .obj = fun.upcast() });
+    const constant = try make_constant(fun.obj.value());
     try emit_two(op_u8(.op_closure), @intCast(constant));
 
     for (0..fun.upvalue_count) |i| {
@@ -403,7 +403,7 @@ fn parse_variable(error_message: []const u8) !u8 {
 }
 
 fn identifier_constant(name: *const scanner.Token) !u8 {
-    const ident = try object.ObjString.copy(name.text);
+    const ident = try Obj.String.copy(name.text);
     if (vm.vm.global_names.get(ident)) |index|
         return @intFromFloat(index.number);
     try vm.vm.global_values.push(Value.undefined_);
@@ -600,7 +600,7 @@ fn error_at(token: *scanner.Token, message: []const u8) void {
     parser.had_error = true;
 }
 
-fn end_compiler() *object.ObjFunction {
+fn end_compiler() *Obj.Function {
     emit_return() catch unreachable;
     const fun = current.function;
     if (config.print_code) {
@@ -669,8 +669,8 @@ fn string(can_assign: bool) !void {
     _ = can_assign;
     const end = parser.previous.text.len - 1;
     const chars = parser.previous.text[1..end]; // remove the quotes
-    const s = try object.ObjString.copy(chars);
-    try emit_constant(.{ .obj = s.upcast() });
+    const s = try Obj.String.copy(chars);
+    try emit_constant(s.obj.value());
 }
 
 /// Parse variable names.

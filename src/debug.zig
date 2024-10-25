@@ -1,7 +1,7 @@
 const std = @import("std");
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
-const print_value = @import("value.zig").print_value;
+const Obj = @import("Obj.zig");
 
 pub fn disassemble_chunk(chunk: *const Chunk, name: []const u8) void {
     std.debug.print("== {s} ==\n", .{name});
@@ -49,17 +49,17 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
         .op_call => return byte_instruction("OP_CALL", chunk, offset),
         .op_closure => {
             const constant = chunk.code.items[offset + 1];
+            const val = chunk.constants.items[constant];
             var i = offset + 2;
-            std.debug.print("{s: <16} {d: >4} ", .{ "OP_CLOSURE", constant });
-            print_value(chunk.constants.items[constant]);
-            std.debug.print("\n", .{});
-            const function = chunk.constants.items[constant].obj.downcast_function();
+            std.debug.print("{s: <16} {d: >4} {s}\n", .{ "OP_CLOSURE", constant, val });
+            const function = val.obj.as(Obj.Function);
             for (0..function.upvalue_count) |_| {
                 const is_local = chunk.code.items[i] == 1;
                 const index = chunk.code.items[i + 1];
+                const upvalue_type = if (is_local) "local" else "upvalue";
                 std.debug.print(
                     "{d:0>4}      |                     {s} {d}\n",
-                    .{ i, if (is_local) "local" else "upvalue", index },
+                    .{ i, upvalue_type, index },
                 );
                 i += 2;
             }
@@ -79,9 +79,10 @@ fn simple_instruction(name: []const u8, offset: usize) usize {
 
 fn constant_instruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
     const constant = chunk.code.items[offset + 1];
-    std.debug.print("{s: <16} {d: >4} '", .{ name, constant });
-    print_value(chunk.constants.items[constant]);
-    std.debug.print("'\n", .{});
+    std.debug.print(
+        "{s: <16} {d: >4} '{s}'\n",
+        .{ name, constant, chunk.constants.items[constant] },
+    );
     return offset + 2;
 }
 
