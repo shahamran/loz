@@ -1,8 +1,8 @@
 const std = @import("std");
 const config = @import("config");
 
-const Chunk = @import("chunk.zig").Chunk;
-const OpCode = @import("chunk.zig").OpCode;
+const Chunk = @import("Chunk.zig");
+const OpCode = Chunk.OpCode;
 const Value = @import("value.zig").Value;
 const List = @import("list.zig").List;
 const Obj = @import("Obj.zig");
