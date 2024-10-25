@@ -1,6 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const scanner = @import("scanner.zig");
+const Scanner = @import("Scanner.zig");
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
@@ -16,10 +16,11 @@ var parser: Parser = undefined;
 var current: *Compiler = undefined;
 var compiling_chunk: *Chunk = undefined;
 var string_constants: Table = undefined;
+var scanner: Scanner = undefined;
 
 const Parser = struct {
-    current: scanner.Token,
-    previous: scanner.Token,
+    current: Scanner.Token,
+    previous: Scanner.Token,
     had_error: bool,
     panic_mode: bool,
 };
@@ -61,7 +62,7 @@ const FunctionKind = enum {
 };
 
 const Local = struct {
-    name: scanner.Token,
+    name: Scanner.Token,
     depth: ?u8,
     is_captured: bool,
 };
@@ -105,7 +106,7 @@ const Precedence = enum {
 };
 
 pub fn compile(source: []const u8) !?*Obj.Function {
-    scanner.init_scanner(source);
+    scanner.init(source);
     var compiler: Compiler = undefined;
     try compiler.init(.script);
     parser.had_error = false;
@@ -383,7 +384,7 @@ fn declare_variable() void {
     add_local(name.*);
 }
 
-fn add_local(name: scanner.Token) void {
+fn add_local(name: Scanner.Token) void {
     if (current.local_count == std.math.maxInt(u8)) {
         error_("Too many local variables in function.");
         return;
@@ -402,7 +403,7 @@ fn parse_variable(error_message: []const u8) !u8 {
     return try identifier_constant(&parser.previous);
 }
 
-fn identifier_constant(name: *const scanner.Token) !u8 {
+fn identifier_constant(name: *const Scanner.Token) !u8 {
     const ident = try Obj.String.copy(name.text);
     if (vm.vm.global_names.get(ident)) |index|
         return @intFromFloat(index.number);
@@ -412,7 +413,7 @@ fn identifier_constant(name: *const scanner.Token) !u8 {
     return @intCast(index);
 }
 
-fn resolve_local(compiler: *const Compiler, name: *const scanner.Token) ?u8 {
+fn resolve_local(compiler: *const Compiler, name: *const Scanner.Token) ?u8 {
     var i = compiler.local_count;
     while (i > 0) {
         i -= 1;
@@ -426,7 +427,7 @@ fn resolve_local(compiler: *const Compiler, name: *const scanner.Token) ?u8 {
     return null;
 }
 
-fn resolve_upvalue(compiler: *Compiler, name: *const scanner.Token) ?u8 {
+fn resolve_upvalue(compiler: *Compiler, name: *const Scanner.Token) ?u8 {
     const enclosing = compiler.enclosing orelse return null;
     if (resolve_local(enclosing, name)) |local| {
         enclosing.locals[local].is_captured = true;
@@ -458,7 +459,7 @@ fn add_upvalue(compiler: *Compiler, index: u8, is_local: bool) u8 {
     return upvalue_count;
 }
 
-fn named_variable(name: scanner.Token, can_assign: bool) !void {
+fn named_variable(name: Scanner.Token, can_assign: bool) !void {
     var arg: u8 = undefined;
     var get_op: OpCode = undefined;
     var set_op: OpCode = undefined;
@@ -494,7 +495,7 @@ fn advance() void {
     }
 }
 
-fn consume(kind: scanner.TokenType, message: []const u8) void {
+fn consume(kind: Scanner.TokenType, message: []const u8) void {
     if (parser.current.kind == kind) {
         advance();
         return;
@@ -502,13 +503,13 @@ fn consume(kind: scanner.TokenType, message: []const u8) void {
     error_at_current(message);
 }
 
-fn match(kind: scanner.TokenType) bool {
+fn match(kind: Scanner.TokenType) bool {
     if (!check(kind)) return false;
     advance();
     return true;
 }
 
-fn check(kind: scanner.TokenType) bool {
+fn check(kind: Scanner.TokenType) bool {
     return parser.current.kind == kind;
 }
 
@@ -584,7 +585,7 @@ fn error_at_current(message: []const u8) void {
     error_at(&parser.current, message);
 }
 
-fn error_at(token: *scanner.Token, message: []const u8) void {
+fn error_at(token: *Scanner.Token, message: []const u8) void {
     if (parser.panic_mode) return;
     parser.panic_mode = true;
     std.debug.print("[line {d}] Error", .{token.line});
@@ -634,7 +635,7 @@ fn end_scope() !void {
     }
 }
 
-inline fn identifiers_equal(a: *const scanner.Token, b: *const scanner.Token) bool {
+inline fn identifiers_equal(a: *const Scanner.Token, b: *const Scanner.Token) bool {
     return std.mem.eql(u8, a.text, b.text);
 }
 
@@ -753,7 +754,7 @@ const ParseRule = struct {
 };
 
 /// Parse table. Maps token types to parsing functions and precedence.
-const rules = std.EnumArray(scanner.TokenType, ParseRule).init(.{
+const rules = std.EnumArray(Scanner.TokenType, ParseRule).init(.{
     .left_paren = .{ .prefix = grouping, .infix = call, .precedence = .call },
     .right_paren = .{ .prefix = null, .infix = null, .precedence = .none },
     .left_brace = .{ .prefix = null, .infix = null, .precedence = .none },
