@@ -218,9 +218,9 @@ fn allocate(comptime T: type, args: anytype) !*T {
         .next = vm.vm.objects,
     };
     inline for (@typeInfo(T).@"struct".fields) |field| {
-        if (field.default_value) |default_ptr| {
-            const default_value = @as(*const field.type, @alignCast(@ptrCast(default_ptr))).*;
-            @field(ptr, field.name) = default_value;
+        if (field.default_value) |opaque_ptr| {
+            const default_ptr: *const field.type = @alignCast(@ptrCast(opaque_ptr));
+            @field(ptr, field.name) = default_ptr.*;
         }
     }
     inline for (@typeInfo(@TypeOf(args)).@"struct".fields) |field| {
