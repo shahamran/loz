@@ -3,7 +3,7 @@ const config = @import("config");
 const memory = @import("memory.zig");
 const string = @import("string.zig");
 const vm = @import("vm.zig");
-const Chunk = @import("chunk.zig").Chunk;
+const Chunk = @import("Chunk.zig");
 const Value = @import("value.zig").Value;
 
 const Obj = @This();

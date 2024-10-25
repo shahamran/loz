@@ -5,53 +5,51 @@ const vm = @import("vm.zig");
 const List = @import("list.zig").List;
 const Value = @import("value.zig").Value;
 
-pub const Chunk = struct {
-    const Self = @This();
+const Chunk = @This();
 
-    code: List(u8), // bytecode
-    lines: List(LineInfo),
-    constants: List(Value),
+code: List(u8), // bytecode
+lines: List(LineInfo),
+constants: List(Value),
 
-    pub fn init() Self {
-        return .{
-            .code = List(u8).init(),
-            .lines = List(LineInfo).init(),
-            .constants = List(Value).init(),
-        };
+pub fn init() Chunk {
+    return .{
+        .code = List(u8).init(),
+        .lines = List(LineInfo).init(),
+        .constants = List(Value).init(),
+    };
+}
+
+pub fn deinit(self: *Chunk) void {
+    self.code.deinit();
+    self.lines.deinit();
+    self.constants.deinit();
+    self.* = init();
+}
+
+pub fn write(self: *Chunk, byte: u8, line: usize) Allocator.Error!void {
+    try self.code.push(byte);
+    if (self.lines.items.len == 0 or self.lines.last().line != line) {
+        try self.lines.push(.{ .line = line, .start = self.code.items.len - 1 });
     }
+}
 
-    pub fn deinit(self: *Self) void {
-        self.code.deinit();
-        self.lines.deinit();
-        self.constants.deinit();
-        self.* = init();
-    }
+pub fn add_constant(self: *Chunk, val: Value) Allocator.Error!usize {
+    vm.push(val);
+    try self.constants.push(val);
+    _ = vm.pop();
+    return self.constants.items.len - 1;
+}
 
-    pub fn write(self: *Self, byte: u8, line: usize) Allocator.Error!void {
-        try self.code.push(byte);
-        if (self.lines.items.len == 0 or self.lines.last().line != line) {
-            try self.lines.push(.{ .line = line, .start = self.code.items.len - 1 });
+pub fn get_line(self: *const Chunk, offset: usize) usize {
+    // TODO: binary search
+    std.debug.assert(self.lines.items.len > 0);
+    for (self.lines.items, 0..) |line, i| {
+        if (line.start > offset) {
+            return self.lines.items[i - 1].line;
         }
     }
-
-    pub fn add_constant(self: *Self, val: Value) Allocator.Error!usize {
-        vm.push(val);
-        try self.constants.push(val);
-        _ = vm.pop();
-        return self.constants.items.len - 1;
-    }
-
-    pub fn get_line(self: *const Self, offset: usize) usize {
-        // TODO: binary search
-        std.debug.assert(self.lines.items.len > 0);
-        for (self.lines.items, 0..) |line, i| {
-            if (line.start > offset) {
-                return self.lines.items[i - 1].line;
-            }
-        }
-        return self.lines.last().line;
-    }
-};
+    return self.lines.last().line;
+}
 
 pub const OpCode = enum(u8) {
     op_constant,
