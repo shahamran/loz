@@ -79,7 +79,10 @@ pub fn allocate_object(vm: *Vm, comptime T: type, args: anytype) !*T {
     }
     vm.objects = &ptr.obj;
     if (config.log_gc) {
-        std.debug.print("{s} allocate {d}\n", .{ &ptr.obj, @sizeOf(T) });
+        std.debug.print(
+            "0x{x} allocate {d} for {s}\n",
+            .{ @intFromPtr(&ptr.obj), @sizeOf(T), @tagName(T.kind) },
+        );
     }
     return ptr;
 }

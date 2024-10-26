@@ -33,7 +33,7 @@ pub inline fn as(obj: *Obj, comptime T: type) *T {
 /// Free this object.
 pub fn deinit(obj: *Obj, vm: *Vm) void {
     if (config.log_gc) {
-        std.debug.print("{s} free\n", .{obj});
+        std.debug.print("0x{x} free {s}\n", .{ @intFromPtr(obj), @tagName(obj.kind) });
     }
     switch (obj.kind) {
         .closure => obj.as(Closure).deinit(vm),
@@ -210,18 +210,3 @@ pub const Upvalue = struct {
         vm.allocator.destroy(self);
     }
 };
-
-// format object pointer with its kind
-pub fn format(
-    obj: *const Obj,
-    comptime fmt: []const u8,
-    options: std.fmt.FormatOptions,
-    writer: anytype,
-) !void {
-    _ = fmt;
-    _ = options;
-    try writer.print(
-        "0x{x}-{s}",
-        .{ @intFromPtr(obj), @tagName(obj.kind) },
-    );
-}

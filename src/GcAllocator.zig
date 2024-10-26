@@ -54,19 +54,19 @@ fn alloc(ctx: *anyopaque, len: usize, log2_buf_align: u8, ret_addr: usize) ?[*]u
 fn resize(ctx: *anyopaque, buf: []u8, log2_buf_align: u8, new_len: usize, ret_addr: usize) bool {
     const self: *Self = @ptrCast(@alignCast(ctx));
     const old_len = buf.len;
+    const abs_diff = if (new_len > old_len) new_len - old_len else old_len - new_len;
 
-    if (new_len > old_len) self.maybe_collect(new_len - old_len);
+    if (new_len > old_len) self.maybe_collect(abs_diff);
 
-    const result = self.parent_allocator
+    const resized = self.parent_allocator
         .rawResize(buf, log2_buf_align, new_len, ret_addr);
-
-    if (buf.len > old_len) {
-        self.bytes_allocated += buf.len - old_len;
+    if (!resized) return false;
+    if (new_len > old_len) {
+        self.bytes_allocated += abs_diff;
     } else {
-        self.bytes_allocated -= old_len - buf.len;
+        self.bytes_allocated -= abs_diff;
     }
-
-    return result;
+    return true;
 }
 
 fn free(ctx: *anyopaque, buf: []u8, log2_buf_align: u8, ret_addr: usize) void {
@@ -149,7 +149,7 @@ fn mark_object(self: *Self, object: ?*Obj) void {
     const obj = object.?;
     if (obj.is_marked) return;
     if (config.log_gc) {
-        std.debug.print("{s} mark {s}\n", .{ obj, obj.value() });
+        std.debug.print("0x{x} mark {s}\n", .{ @intFromPtr(obj), obj.value() });
     }
     obj.is_marked = true;
     // crash and burn if allocating for gray object fails.
@@ -165,7 +165,7 @@ fn trace_references(self: *Self) void {
 
 fn blacken_object(self: *Self, object: *Obj) void {
     if (config.log_gc) {
-        std.debug.print("{s} blacken {s}\n", .{ object, object.value() });
+        std.debug.print("0x{x} blacken {s}\n", .{ @intFromPtr(object), object.value() });
     }
     switch (object.kind) {
         .closure => {
