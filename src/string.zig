@@ -1,3 +1,5 @@
+const std = @import("std");
+const Allocator = std.mem.Allocator;
 const List = @import("list.zig").List;
 
 /// Null terminated list of bytes, dynamically sized.
@@ -6,21 +8,21 @@ pub const String = struct {
 
     chars: List(u8),
 
-    pub fn init() Self {
+    pub fn init(allocator: Allocator) Self {
         return .{
-            .chars = List(u8).init(),
+            .chars = List(u8).init(allocator),
         };
     }
 
-    pub fn init_from(slice: []const u8) !Self {
-        var string = Self.init();
+    pub fn init_from(allocator: Allocator, slice: []const u8) !Self {
+        var string = Self.init(allocator);
         try string.append(slice);
         return string;
     }
 
     pub fn deinit(self: *Self) void {
         self.chars.deinit();
-        self.* = init();
+        self.* = init(self.chars.allocator);
     }
 
     pub fn str_len(self: *const Self) usize {
@@ -28,7 +30,7 @@ pub const String = struct {
     }
 
     pub fn clone(self: *const Self) !Self {
-        var new_string = Self.init();
+        var new_string = Self.init(self.chars.allocator);
         try new_string.append(self.as_slice());
         return new_string;
     }
@@ -53,9 +55,9 @@ pub const String = struct {
 };
 
 test "string" {
-    const expect = @import("std").testing.expect;
-    const expectEqualSentinel = @import("std").testing.expectEqualSentinel;
-    var string = String.init();
+    const expect = std.testing.expect;
+    const expectEqualSentinel = std.testing.expectEqualSentinel;
+    var string = String.init(std.testing.allocator);
     defer string.deinit();
     try expectEqualSentinel(u8, 0, "", string.as_slice());
     try expect(string.str_len() == 0);

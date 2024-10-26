@@ -1,9 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const memory = @import("memory.zig");
-const vm = @import("vm.zig");
 const List = @import("list.zig").List;
 const Value = @import("value.zig").Value;
+const Vm = @import("Vm.zig");
 
 const Chunk = @This();
 
@@ -11,11 +10,11 @@ code: List(u8), // bytecode
 lines: List(LineInfo),
 constants: List(Value),
 
-pub fn init() Chunk {
+pub fn init(allocator: Allocator) Chunk {
     return .{
-        .code = List(u8).init(),
-        .lines = List(LineInfo).init(),
-        .constants = List(Value).init(),
+        .code = List(u8).init(allocator),
+        .lines = List(LineInfo).init(allocator),
+        .constants = List(Value).init(allocator),
     };
 }
 
@@ -23,7 +22,7 @@ pub fn deinit(self: *Chunk) void {
     self.code.deinit();
     self.lines.deinit();
     self.constants.deinit();
-    self.* = init();
+    self.* = init(self.code.allocator);
 }
 
 pub fn write(self: *Chunk, byte: u8, line: usize) Allocator.Error!void {
@@ -33,7 +32,7 @@ pub fn write(self: *Chunk, byte: u8, line: usize) Allocator.Error!void {
     }
 }
 
-pub fn add_constant(self: *Chunk, val: Value) Allocator.Error!usize {
+pub fn add_constant(self: *Chunk, vm: *Vm, val: Value) Allocator.Error!usize {
     vm.push(val);
     try self.constants.push(val);
     _ = vm.pop();
@@ -90,7 +89,7 @@ pub const LineInfo = struct {
 
 test "basic" {
     const expectEqual = std.testing.expectEqual;
-    var chunk = Chunk.init();
+    var chunk = Chunk.init(std.testing.allocator);
     defer chunk.deinit();
     try chunk.write(@intFromEnum(OpCode.op_return), 123);
     const actual: OpCode = @enumFromInt(chunk.code.items[0]);

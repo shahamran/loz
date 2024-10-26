@@ -20,7 +20,7 @@ pub const Value = union(enum) {
         }
     }
 
-    pub fn is_string(self: Self) bool {
+    pub inline fn is_string(self: Self) bool {
         return self == .obj and self.obj.kind == .string;
     }
 

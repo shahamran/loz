@@ -1,12 +1,12 @@
 const std = @import("std");
 const config = @import("config");
-const memory = @import("memory.zig");
 const string = @import("string.zig");
-const vm = @import("vm.zig");
 const Chunk = @import("Chunk.zig");
 const Value = @import("value.zig").Value;
+const Vm = @import("Vm.zig");
 
 const Obj = @This();
+
 const Kind = enum {
     closure,
     function,
@@ -31,16 +31,16 @@ pub inline fn as(obj: *Obj, comptime T: type) *T {
 }
 
 /// Free this object.
-pub fn deinit(obj: *Obj) void {
+pub fn deinit(obj: *Obj, vm: *Vm) void {
     if (config.log_gc) {
         std.debug.print("{s} free\n", .{obj});
     }
     switch (obj.kind) {
-        .closure => obj.as(Closure).deinit(),
-        .function => obj.as(Function).deinit(),
-        .native => obj.as(Native).deinit(),
-        .string => obj.as(String).deinit(),
-        .upvalue => obj.as(Upvalue).deinit(),
+        .closure => obj.as(Closure).deinit(vm),
+        .function => obj.as(Function).deinit(vm),
+        .native => obj.as(Native).deinit(vm),
+        .string => obj.as(String).deinit(vm),
+        .upvalue => obj.as(Upvalue).deinit(vm),
     }
 }
 
@@ -59,29 +59,29 @@ pub fn eql(self: *Obj, other: *Obj) bool {
 }
 
 pub const Closure = struct {
+    pub const kind = Kind.closure;
     const Self = @This();
-    const kind = Kind.closure;
 
     obj: Obj,
     function: *Function,
     upvalues: []?*Upvalue,
 
-    pub fn init(function: *Function) !*Self {
+    pub fn init(vm: *Vm, function: *Function) !*Self {
         var upvalues: []?*Upvalue = &[_]?*Upvalue{};
-        upvalues = try memory.reallocate(upvalues, function.upvalue_count);
+        upvalues = try vm.allocator.realloc(upvalues, function.upvalue_count);
         for (upvalues) |*v| v.* = null;
-        return try allocate(Self, .{ .function = function, .upvalues = upvalues });
+        return try vm.allocate_object(Self, .{ .function = function, .upvalues = upvalues });
     }
 
-    pub fn deinit(self: *Self) void {
-        memory.free(self.upvalues);
-        memory.free(self[0..1]);
+    pub fn deinit(self: *Self, vm: *Vm) void {
+        vm.allocator.free(self.upvalues);
+        vm.allocator.destroy(self);
     }
 };
 
 pub const Function = struct {
+    pub const kind = Kind.function;
     const Self = @This();
-    const kind = Kind.function;
 
     obj: Obj,
     arity: u8 = 0,
@@ -89,13 +89,16 @@ pub const Function = struct {
     chunk: Chunk,
     name: ?*String = null,
 
-    pub fn init() !*Self {
-        return try allocate(Self, .{ .chunk = Chunk.init() });
+    pub fn init(vm: *Vm) !*Self {
+        return try vm.allocate_object(
+            Self,
+            .{ .chunk = Chunk.init(vm.allocator) },
+        );
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: *Self, vm: *Vm) void {
         self.chunk.deinit();
-        memory.free(self[0..1]);
+        vm.allocator.destroy(self);
     }
 
     pub fn format(
@@ -116,58 +119,58 @@ pub const Function = struct {
 pub const NativeFn = *const fn (u8, [*]Value) Value;
 
 pub const Native = struct {
-    const kind = Kind.native;
+    pub const kind = Kind.native;
 
     obj: Obj,
     function: NativeFn,
     arity: u8,
 
-    pub fn init(arity: u8, function: NativeFn) !*Native {
-        return try allocate(Native, .{ .function = function, .arity = arity });
+    pub fn init(vm: *Vm, arity: u8, function: NativeFn) !*Native {
+        return try vm.allocate_object(Native, .{ .function = function, .arity = arity });
     }
 
-    pub fn deinit(self: *Native) void {
-        memory.free(self[0..1]);
+    pub fn deinit(self: *Native, vm: *Vm) void {
+        vm.allocator.destroy(self);
     }
 };
 
 pub const String = struct {
+    pub const kind = Kind.string;
     const Self = @This();
-    const kind = Kind.string;
 
     obj: Obj,
     value: string.String,
     hash: u32,
 
-    pub fn copy(chars: []const u8) !*Self {
+    pub fn copy(vm: *Vm, chars: []const u8) !*Self {
         const hash = hash_fn(chars);
-        if (vm.vm.strings.find_key(chars, hash)) |interned| return interned;
-        const s = try string.String.init_from(chars);
-        return try init(s, hash);
+        if (vm.strings.find_key(chars, hash)) |interned| return interned;
+        const s = try string.String.init_from(vm.allocator, chars);
+        return try init(vm, s, hash);
     }
 
-    pub fn take(s: *string.String) !*Self {
+    pub fn take(vm: *Vm, s: *string.String) !*Self {
         const chars = s.chars.items;
         const hash = hash_fn(chars);
-        if (vm.vm.strings.find_key(chars, hash)) |interned| {
+        if (vm.strings.find_key(chars, hash)) |interned| {
             s.deinit();
             return interned;
         }
-        return try init(s.*, hash);
+        return try init(vm, s.*, hash);
     }
 
-    fn init(s: string.String, hash: u32) !*Self {
-        const ptr = try allocate(Self, .{ .value = s, .hash = hash });
+    fn init(vm: *Vm, s: string.String, hash: u32) !*Self {
+        const ptr = try vm.allocate_object(Self, .{ .value = s, .hash = hash });
         vm.push(ptr.obj.value());
-        const is_new = try vm.vm.strings.insert(ptr, .nil);
+        const is_new = try vm.strings.insert(ptr, .nil);
         _ = vm.pop();
         std.debug.assert(is_new);
         return ptr;
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: *Self, vm: *Vm) void {
         self.value.deinit();
-        memory.free(self[0..1]);
+        vm.allocator.destroy(self);
     }
 
     fn hash_fn(chars: []const u8) u32 {
@@ -192,46 +195,21 @@ pub const String = struct {
 };
 
 pub const Upvalue = struct {
-    const kind = Kind.upvalue;
+    pub const kind = Kind.upvalue;
 
     obj: Obj,
     location: *Value,
     closed: Value = .nil,
     next: ?*Upvalue,
 
-    pub fn init(args: struct { location: *Value, next: ?*Upvalue = null }) !*Upvalue {
-        return try allocate(Upvalue, args);
+    pub fn init(vm: *Vm, args: struct { location: *Value, next: ?*Upvalue = null }) !*Upvalue {
+        return try vm.allocate_object(Upvalue, args);
     }
 
-    pub fn deinit(self: *Upvalue) void {
-        memory.free(self[0..1]);
+    pub fn deinit(self: *Upvalue, vm: *Vm) void {
+        vm.allocator.destroy(self);
     }
 };
-
-fn allocate(comptime T: type, args: anytype) !*T {
-    var slice: []T = &[_]T{};
-    slice = try memory.reallocate(slice, 1);
-    const ptr = &slice[0];
-    ptr.obj = .{
-        .kind = T.kind,
-        .is_marked = false,
-        .next = vm.vm.objects,
-    };
-    inline for (@typeInfo(T).@"struct".fields) |field| {
-        if (field.default_value) |opaque_ptr| {
-            const default_ptr: *const field.type = @alignCast(@ptrCast(opaque_ptr));
-            @field(ptr, field.name) = default_ptr.*;
-        }
-    }
-    inline for (@typeInfo(@TypeOf(args)).@"struct".fields) |field| {
-        @field(ptr, field.name) = @field(args, field.name);
-    }
-    vm.vm.objects = &ptr.obj;
-    if (config.log_gc) {
-        std.debug.print("{s} allocate {d}\n", .{ &ptr.obj, @sizeOf(T) });
-    }
-    return ptr;
-}
 
 // format object pointer with its kind
 pub fn format(

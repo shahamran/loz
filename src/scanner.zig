@@ -10,6 +10,10 @@ pub const Token = struct {
     kind: TokenType,
     text: []const u8,
     line: usize,
+
+    pub inline fn eql(self: *const Token, other: *const Token) bool {
+        return std.mem.eql(u8, self.text, other.text);
+    }
 };
 
 pub const TokenType = enum {

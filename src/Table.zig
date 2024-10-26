@@ -1,21 +1,27 @@
 const std = @import("std");
-const memory = @import("memory.zig");
+const common = @import("common.zig");
 const Obj = @import("Obj.zig");
 const Value = @import("value.zig").Value;
+const Vm = @import("Vm.zig");
 
 const Self = @This();
 const MAX_LOAD = 0.75;
 
+allocator: std.mem.Allocator,
 entries: []Entry,
 count: usize,
 
-pub fn init() Self {
-    return .{ .entries = &[_]Entry{}, .count = 0 };
+pub fn init(allocator: std.mem.Allocator) Self {
+    return .{
+        .allocator = allocator,
+        .entries = &[_]Entry{},
+        .count = 0,
+    };
 }
 
 pub fn deinit(self: *Self) void {
-    memory.free(self.entries);
-    self.* = init();
+    self.allocator.free(self.entries);
+    self.* = init(self.allocator);
 }
 
 pub fn get(self: *Self, key: *Obj.String) ?Value {
@@ -27,7 +33,7 @@ pub fn get(self: *Self, key: *Obj.String) ?Value {
 
 pub fn insert(self: *Self, key: *Obj.String, value: Value) !bool {
     if (self.count + 1 > self.max_size()) {
-        const new_capacity = memory.grow_capacity(self.entries.len);
+        const new_capacity = common.grow_capacity(self.entries.len);
         try self.adjust_capacity(new_capacity);
     }
     const entry = find_entry(self.entries, key);
@@ -94,8 +100,7 @@ fn copy_all(self: *const Self, other: *Self) !void {
 }
 
 fn adjust_capacity(self: *Self, new_capacity: usize) !void {
-    const slice: []Entry = &[_]Entry{};
-    const new_entries = try memory.reallocate(slice, new_capacity);
+    const new_entries = try self.allocator.alloc(Entry, new_capacity);
     for (new_entries) |*entry| {
         entry.key = null;
         entry.value = Value.nil;
@@ -109,7 +114,7 @@ fn adjust_capacity(self: *Self, new_capacity: usize) !void {
         dest.value = entry.value;
         self.count += 1;
     }
-    memory.free(self.entries);
+    self.allocator.free(self.entries);
     self.entries = new_entries;
 }
 
