@@ -1,67 +1,61 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const List = @import("list.zig").List;
 
 /// Null terminated list of bytes, dynamically sized.
 pub const String = struct {
     const Self = @This();
 
-    chars: List(u8),
-
-    pub fn init(allocator: Allocator) Self {
-        return .{
-            .chars = List(u8).init(allocator),
-        };
-    }
+    chars: []u8 = &[_]u8{},
 
     pub fn init_from(allocator: Allocator, slice: []const u8) !Self {
-        var string = Self.init(allocator);
-        try string.append(slice);
-        return string;
+        const chars = try allocator.alloc(u8, slice.len + 1);
+        std.mem.copyForwards(u8, chars, slice);
+        chars[slice.len] = 0; // null terminator
+        return .{ .chars = chars };
     }
 
-    pub fn deinit(self: *Self) void {
-        self.chars.deinit();
-        self.* = init(self.chars.allocator);
+    pub fn deinit(self: *Self, allocator: Allocator) void {
+        allocator.free(self.chars);
     }
 
     pub fn str_len(self: *const Self) usize {
-        return self.as_slice().len;
+        return self.chars.len - 1;
     }
 
-    pub fn clone(self: *const Self) !Self {
-        var new_string = Self.init(self.chars.allocator);
-        try new_string.append(self.as_slice());
-        return new_string;
+    pub fn clone(self: *const Self, allocator: Allocator) !Self {
+        return try init_from(allocator, self.as_slice());
     }
 
     pub fn as_slice(self: *const Self) [:0]const u8 {
-        if (self.chars.items.len == 0) return "";
-        return self.chars.items[0 .. self.chars.items.len - 1 :0];
+        if (self.chars.len == 0) return "";
+        return self.chars[0 .. self.chars.len - 1 :0];
     }
 
     /// Append the given chars to the end of this string.
-    pub fn append(self: *Self, str: []const u8) !void {
+    pub fn append(self: *Self, allocator: Allocator, str: []const u8) !void {
         if (str.len == 0) return;
-        if (self.chars.items.len > 0) {
-            try self.chars.reserve(self.chars.items.len + str.len);
-            _ = self.chars.pop(); // remove null terminator
+        var start: usize = undefined;
+        var new_n: usize = undefined;
+        if (self.chars.len > 0) {
+            start = self.chars.len - 1; // override null terminator
+            new_n = self.chars.len + str.len;
         } else {
-            try self.chars.reserve(str.len + 1);
+            start = 0;
+            new_n = str.len + 1;
         }
-        for (str) |c| self.chars.push(c) catch unreachable;
-        self.chars.push(0) catch unreachable; // add null terminator
+        self.chars = try allocator.realloc(self.chars, new_n);
+        std.mem.copyForwards(u8, self.chars[start..], str);
+        self.chars[self.chars.len - 1] = 0;
     }
 };
 
 test "string" {
     const expect = std.testing.expect;
     const expectEqualSentinel = std.testing.expectEqualSentinel;
-    var string = String.init(std.testing.allocator);
+    var string = String{};
     defer string.deinit();
     try expectEqualSentinel(u8, 0, "", string.as_slice());
     try expect(string.str_len() == 0);
-    try expect(string.chars.capacity == 0);
     try string.append("hello");
     try expectEqualSentinel(u8, 0, "hello", string.as_slice());
     try expect(string.str_len() == 5);

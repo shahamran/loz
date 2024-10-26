@@ -217,8 +217,8 @@ fn run(vm: *Vm) !InterpretResult {
                 if (vm.peek(0).is_string() and vm.peek(1).is_string()) {
                     const b = vm.peek(0).obj.as(Obj.String);
                     const a = vm.peek(1).obj.as(Obj.String);
-                    var result = try a.value.clone();
-                    try result.append(b.value.as_slice());
+                    var result = try a.value.clone(vm.allocator);
+                    try result.append(vm.allocator, b.value.as_slice());
                     const obj = try Obj.String.take(vm, &result);
                     _ = vm.pop();
                     _ = vm.pop();

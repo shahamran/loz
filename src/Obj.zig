@@ -150,10 +150,10 @@ pub const String = struct {
     }
 
     pub fn take(vm: *Vm, s: *string.String) !*Self {
-        const chars = s.chars.items;
+        const chars = s.as_slice();
         const hash = hash_fn(chars);
         if (vm.strings.find_key(chars, hash)) |interned| {
-            s.deinit();
+            s.deinit(vm.allocator);
             return interned;
         }
         return try init(vm, s.*, hash);
@@ -169,7 +169,7 @@ pub const String = struct {
     }
 
     pub fn deinit(self: *Self, vm: *Vm) void {
-        self.value.deinit();
+        self.value.deinit(vm.allocator);
         vm.allocator.destroy(self);
     }
 
