@@ -19,7 +19,7 @@ pub const String = struct {
     }
 
     pub fn str_len(self: *const Self) usize {
-        return self.chars.len - 1;
+        return self.chars.len -| 1;
     }
 
     pub fn clone(self: *const Self, allocator: Allocator) !Self {
@@ -52,11 +52,12 @@ pub const String = struct {
 test "string" {
     const expect = std.testing.expect;
     const expectEqualSentinel = std.testing.expectEqualSentinel;
+    const allocator = std.testing.allocator;
     var string = String{};
-    defer string.deinit();
+    defer string.deinit(allocator);
     try expectEqualSentinel(u8, 0, "", string.as_slice());
     try expect(string.str_len() == 0);
-    try string.append("hello");
+    try string.append(allocator, "hello");
     try expectEqualSentinel(u8, 0, "hello", string.as_slice());
     try expect(string.str_len() == 5);
 }
