@@ -9,12 +9,10 @@ const Value = @import("value.zig").Value;
 const Vm = @import("Vm.zig");
 
 const Self = @This();
-var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
-var parent_allocator = if (builtin.is_test) std.testing.allocator else gpa.allocator();
-
 const GC_HEAP_GROW_FACTOR = 2;
 
 vm: *Vm,
+parent_allocator: Allocator,
 bytes_allocated: usize,
 next_gc: usize,
 gray_stack: std.ArrayList(*Obj), // objects whose references we need to trace
@@ -22,6 +20,7 @@ gray_stack: std.ArrayList(*Obj), // objects whose references we need to trace
 pub fn init(vm: *Vm, backing_allocator: Allocator) Self {
     return .{
         .vm = vm,
+        .parent_allocator = backing_allocator,
         .bytes_allocated = 0,
         .next_gc = 1024 * 1024,
         .gray_stack = std.ArrayList(*Obj).init(backing_allocator),
@@ -30,10 +29,6 @@ pub fn init(vm: *Vm, backing_allocator: Allocator) Self {
 
 pub fn deinit(self: *Self) void {
     self.gray_stack.deinit();
-}
-
-inline fn backing(self: *Self) Allocator {
-    return self.gray_stack.allocator;
 }
 
 pub inline fn allocator(self: *Self) Allocator {
@@ -50,7 +45,7 @@ pub inline fn allocator(self: *Self) Allocator {
 fn alloc(ctx: *anyopaque, len: usize, log2_buf_align: u8, ret_addr: usize) ?[*]u8 {
     const self: *Self = @ptrCast(@alignCast(ctx));
     self.maybe_collect(len);
-    const ret = self.backing()
+    const ret = self.parent_allocator
         .rawAlloc(len, log2_buf_align, ret_addr) orelse return null;
     self.bytes_allocated += len;
     return ret;
@@ -62,7 +57,7 @@ fn resize(ctx: *anyopaque, buf: []u8, log2_buf_align: u8, new_len: usize, ret_ad
 
     if (new_len > old_len) self.maybe_collect(new_len - old_len);
 
-    const result = self.backing()
+    const result = self.parent_allocator
         .rawResize(buf, log2_buf_align, new_len, ret_addr);
 
     if (buf.len > old_len) {
@@ -76,9 +71,9 @@ fn resize(ctx: *anyopaque, buf: []u8, log2_buf_align: u8, new_len: usize, ret_ad
 
 fn free(ctx: *anyopaque, buf: []u8, log2_buf_align: u8, ret_addr: usize) void {
     const self: *Self = @ptrCast(@alignCast(ctx));
-    self.bytes_allocated -= buf.len;
-    self.backing()
+    self.parent_allocator
         .rawFree(buf, log2_buf_align, ret_addr);
+    self.bytes_allocated -= buf.len;
 }
 
 inline fn maybe_collect(self: *Self, additional: usize) void {
