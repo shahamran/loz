@@ -298,6 +298,10 @@ fn run(vm: *Vm) !InterpretResult {
                 vm.push(result);
                 frame = &vm.frames[vm.frame_count - 1];
             },
+            .op_class => {
+                const class = vm.global_values.items[frame.read_byte()];
+                vm.push(class);
+            },
         }
     }
 }

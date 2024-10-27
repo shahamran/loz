@@ -197,7 +197,9 @@ const Precedence = enum {
 };
 
 fn declaration(self: *Compiler) !void {
-    if (self.match(.fun)) {
+    if (self.match(.class)) {
+        try self.class_declaration();
+    } else if (self.match(.fun)) {
         try self.fun_declaration();
     } else if (self.match(.var_)) {
         try self.var_declaration();
@@ -205,6 +207,30 @@ fn declaration(self: *Compiler) !void {
         try self.statement();
     }
     if (self.parser.panic_mode) self.synchronize();
+}
+
+fn class_declaration(self: *Compiler) !void {
+    self.consume(.identifier, "Expected class name.");
+
+    const class_slot = try self.identifier_constant(&self.parser.previous);
+    const name = try Obj.String.copy(self.vm, self.parser.previous.text);
+    const class = try Obj.Class.init(self.vm, name);
+    self.vm.global_values.items[class_slot] = class.obj.value();
+
+    self.declare_variable();
+    try self.emit_two(op_u8(.op_class), class_slot);
+    try self.define_variable(class_slot);
+
+    self.consume(.left_brace, "Expected '{' before class body.");
+    self.consume(.right_brace, "Expected '}' after class body.");
+}
+
+fn class_name(self: *Compiler) ![2]u8 {
+    const name = &self.parser.previous;
+    const name_constant = try self.identifier_constant(name);
+    const s = try Obj.String.copy(self.vm, name.text);
+    const name_string = try self.make_constant(s.obj.value());
+    return .{ name_constant, name_string };
 }
 
 fn fun_declaration(self: *Compiler) !void {
