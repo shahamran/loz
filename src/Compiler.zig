@@ -474,7 +474,7 @@ fn identifier_constant(self: *Compiler, name: *const Scanner.Token) !u8 {
     const ident = try Obj.String.copy(self.vm, name.text);
     if (self.vm.global_names.get(ident)) |index|
         return @intFromFloat(index.number);
-    try self.vm.global_values.push(Value.undefined_);
+    try self.vm.global_values.push(self.vm.allocator, Value.undefined_);
     const index = self.vm.global_values.items.len - 1;
     _ = try self.vm.global_names.insert(ident, Value{ .number = @floatFromInt(index) });
     return @intCast(index);
@@ -535,7 +535,7 @@ inline fn check(self: *Compiler, kind: Scanner.TokenType) bool {
 }
 
 inline fn emit_byte(self: *Compiler, byte: u8) !void {
-    try self.current_chunk().write(byte, self.parser.previous.line);
+    try self.current_chunk().write(self.vm.allocator, byte, self.parser.previous.line);
 }
 
 pub inline fn emit_return(self: *Compiler) !void {
@@ -579,7 +579,7 @@ inline fn emit_constant(self: *Compiler, value: Value) !void {
 fn make_constant(self: *Compiler, value: Value) !u8 {
     self.vm.push(value);
     defer _ = self.vm.pop();
-    const index = try self.current_chunk().add_constant(value);
+    const index = try self.current_chunk().add_constant(self.vm.allocator, value);
     if (index > std.math.maxInt(u8)) {
         self.error_("Too many constants in one chunk.");
         return 0;

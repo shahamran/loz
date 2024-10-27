@@ -36,7 +36,7 @@ pub fn init(vm: *Vm, allocator: std.mem.Allocator) void {
     vm.compiler.init(vm);
     vm.allocator = allocator;
     vm.global_names = Table.init(allocator);
-    vm.global_values = List(Value).init(allocator);
+    vm.global_values = List(Value).init();
     vm.strings = Table.init(allocator);
     vm.objects = null;
     vm.define_native("clock", 0, clock_native) catch unreachable;
@@ -90,7 +90,7 @@ pub fn allocate_object(vm: *Vm, comptime T: type, args: anytype) !*T {
 pub fn deinit(vm: *Vm) void {
     vm.free_objects();
     vm.global_names.deinit();
-    vm.global_values.deinit();
+    vm.global_values.deinit(vm.allocator);
     vm.strings.deinit();
 }
 
@@ -450,7 +450,7 @@ fn define_native(vm: *Vm, name: []const u8, arity: u8, function: Obj.NativeFn) !
     vm.push((try Obj.Native.init(vm, arity, function)).obj.value());
     const value = Value{ .number = @floatFromInt(vm.global_values.items.len) };
     _ = try vm.global_names.insert(vm.stack[0].obj.as(Obj.String), value);
-    try vm.global_values.push(vm.stack[1]);
+    try vm.global_values.push(vm.allocator, vm.stack[1]);
     _ = vm.pop();
     _ = vm.pop();
 }

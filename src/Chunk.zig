@@ -10,30 +10,33 @@ code: List(u8), // bytecode
 lines: List(LineInfo),
 constants: List(Value),
 
-pub fn init(allocator: Allocator) Chunk {
+pub fn init() Chunk {
     return .{
-        .code = List(u8).init(allocator),
-        .lines = List(LineInfo).init(allocator),
-        .constants = List(Value).init(allocator),
+        .code = List(u8).init(),
+        .lines = List(LineInfo).init(),
+        .constants = List(Value).init(),
     };
 }
 
-pub fn deinit(self: *Chunk) void {
-    self.code.deinit();
-    self.lines.deinit();
-    self.constants.deinit();
-    self.* = init(self.code.allocator);
+pub fn deinit(self: *Chunk, allocator: Allocator) void {
+    self.code.deinit(allocator);
+    self.lines.deinit(allocator);
+    self.constants.deinit(allocator);
+    self.* = init();
 }
 
-pub fn write(self: *Chunk, byte: u8, line: usize) Allocator.Error!void {
-    try self.code.push(byte);
+pub fn write(self: *Chunk, allocator: Allocator, byte: u8, line: usize) Allocator.Error!void {
+    try self.code.push(allocator, byte);
     if (self.lines.items.len == 0 or self.lines.last().line != line) {
-        try self.lines.push(.{ .line = line, .start = self.code.items.len - 1 });
+        try self.lines.push(
+            allocator,
+            .{ .line = line, .start = self.code.items.len - 1 },
+        );
     }
 }
 
-pub fn add_constant(self: *Chunk, val: Value) Allocator.Error!usize {
-    try self.constants.push(val);
+pub inline fn add_constant(self: *Chunk, allocator: Allocator, val: Value) Allocator.Error!usize {
+    try self.constants.push(allocator, val);
     return self.constants.items.len - 1;
 }
 
@@ -87,14 +90,15 @@ pub const LineInfo = struct {
 
 test "basic" {
     const expectEqual = std.testing.expectEqual;
-    var chunk = Chunk.init(std.testing.allocator);
-    defer chunk.deinit();
-    try chunk.write(@intFromEnum(OpCode.op_return), 123);
+    const allocator = std.testing.allocator;
+    var chunk = Chunk.init();
+    defer chunk.deinit(allocator);
+    try chunk.write(allocator, @intFromEnum(OpCode.op_return), 123);
     const actual: OpCode = @enumFromInt(chunk.code.items[0]);
     try expectEqual(.op_return, actual);
     try expectEqual(123, chunk.get_line(0));
-    var constant = try chunk.add_constant(.{ .number = 42.0 });
+    var constant = try chunk.add_constant(allocator, .{ .number = 42.0 });
     try expectEqual(0, constant);
-    constant = try chunk.add_constant(.{ .bool_ = true });
+    constant = try chunk.add_constant(allocator, .{ .bool_ = true });
     try expectEqual(1, constant);
 }

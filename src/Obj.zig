@@ -89,14 +89,11 @@ pub const Function = struct {
     name: ?*String = null,
 
     pub fn init(vm: *Vm) !*Self {
-        return try vm.allocate_object(
-            Self,
-            .{ .chunk = Chunk.init(vm.allocator) },
-        );
+        return try vm.allocate_object(Self, .{ .chunk = Chunk.init() });
     }
 
     pub fn deinit(self: *Self, vm: *Vm) void {
-        self.chunk.deinit();
+        self.chunk.deinit(vm.allocator);
         vm.allocator.destroy(self);
     }
 
