@@ -67,8 +67,7 @@ pub const Closure = struct {
     upvalues: []?*Upvalue,
 
     pub fn init(vm: *Vm, function: *Function) !*Self {
-        var upvalues: []?*Upvalue = &[_]?*Upvalue{};
-        upvalues = try vm.allocator.realloc(upvalues, function.upvalue_count);
+        const upvalues = try vm.allocator.alloc(?*Upvalue, function.upvalue_count);
         for (upvalues) |*v| v.* = null;
         return try vm.allocate_object(Self, .{ .function = function, .upvalues = upvalues });
     }

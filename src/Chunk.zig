@@ -32,10 +32,8 @@ pub fn write(self: *Chunk, byte: u8, line: usize) Allocator.Error!void {
     }
 }
 
-pub fn add_constant(self: *Chunk, vm: *Vm, val: Value) Allocator.Error!usize {
-    vm.push(val);
+pub fn add_constant(self: *Chunk, val: Value) Allocator.Error!usize {
     try self.constants.push(val);
-    _ = vm.pop();
     return self.constants.items.len - 1;
 }
 
@@ -95,8 +93,8 @@ test "basic" {
     const actual: OpCode = @enumFromInt(chunk.code.items[0]);
     try expectEqual(.op_return, actual);
     try expectEqual(123, chunk.get_line(0));
-    // var constant = try chunk.add_constant(.{ .number = 42.0 });
-    // try expectEqual(0, constant);
-    // constant = try chunk.add_constant(.{ .bool_ = true });
-    // try expectEqual(1, constant);
+    var constant = try chunk.add_constant(.{ .number = 42.0 });
+    try expectEqual(0, constant);
+    constant = try chunk.add_constant(.{ .bool_ = true });
+    try expectEqual(1, constant);
 }

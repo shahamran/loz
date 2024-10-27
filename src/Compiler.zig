@@ -367,7 +367,7 @@ fn function(self: *Compiler, kind: FunctionKind) !void {
 
     const fun = node.end();
     const constant = try self.make_constant(fun.obj.value());
-    try self.emit_two(op_u8(.op_closure), @intCast(constant));
+    try self.emit_two(op_u8(.op_closure), constant);
 
     for (0..fun.upvalue_count) |i| {
         try self.emit_byte(if (node.upvalues[i].is_local) 1 else 0);
@@ -572,18 +572,19 @@ fn patch_jump(self: *Compiler, offset: usize) void {
     self.current_chunk().code.items[offset + 1] = @intCast(jump & 0xff);
 }
 
-fn emit_constant(self: *Compiler, value: Value) !void {
-    const constant = try self.make_constant(value);
-    if (constant > std.math.maxInt(u8)) {
-        // TODO: use op_constan_long instead.
-        self.error_("Too many constants in one chunk.");
-        return;
-    }
-    try self.emit_two(op_u8(.op_constant), @intCast(constant));
+inline fn emit_constant(self: *Compiler, value: Value) !void {
+    try self.emit_two(op_u8(.op_constant), try self.make_constant(value));
 }
 
-inline fn make_constant(self: *Compiler, value: Value) !usize {
-    return try self.current_chunk().add_constant(self.vm, value);
+fn make_constant(self: *Compiler, value: Value) !u8 {
+    self.vm.push(value);
+    defer _ = self.vm.pop();
+    const index = try self.current_chunk().add_constant(value);
+    if (index > std.math.maxInt(u8)) {
+        self.error_("Too many constants in one chunk.");
+        return 0;
+    }
+    return @intCast(index);
 }
 
 fn synchronize(self: *Compiler) void {
