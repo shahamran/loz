@@ -51,14 +51,7 @@ pub const Value = union(enum) {
             .bool_ => |b| writer.print("{s}", .{if (b) "true" else "false"}),
             .nil => writer.print("nil", .{}),
             .number => |n| writer.print("{d}", .{n}),
-            .obj => |o| switch (o.kind) {
-                .string => writer.print("{s}", .{o.as(Obj.String)}),
-                .native => writer.print("<native fn>", .{}),
-                .closure => writer.print("{s}", .{o.as(Obj.Closure).function}),
-                .function => writer.print("{s}", .{o.as(Obj.Function)}),
-                // probably unreachable
-                .upvalue => writer.print("upvalue", .{}),
-            },
+            .obj => |o| writer.print("{s}", .{o}),
             .undefined_ => writer.print("undefined", .{}),
         };
     }

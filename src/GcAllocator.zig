@@ -160,6 +160,7 @@ fn blacken_object(self: *Self, object: *Obj) void {
         std.debug.print("0x{x} blacken {s}\n", .{ @intFromPtr(object), object.value() });
     }
     switch (object.kind) {
+        .class => self.mark_object(&object.as(Obj.Class).name.obj),
         .closure => {
             const closure = object.as(Obj.Closure);
             self.mark_object(&closure.function.obj);

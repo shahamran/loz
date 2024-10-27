@@ -8,6 +8,7 @@ const Vm = @import("Vm.zig");
 const Obj = @This();
 
 const Kind = enum {
+    class,
     closure,
     function,
     native,
@@ -36,6 +37,7 @@ pub fn deinit(obj: *Obj, vm: *Vm) void {
         std.debug.print("0x{x} free {s}\n", .{ @intFromPtr(obj), @tagName(obj.kind) });
     }
     switch (obj.kind) {
+        .class => obj.as(Class).deinit(vm),
         .closure => obj.as(Closure).deinit(vm),
         .function => obj.as(Function).deinit(vm),
         .native => obj.as(Native).deinit(vm),
@@ -49,6 +51,7 @@ pub fn eql(self: *Obj, other: *Obj) bool {
         return false;
     }
     return switch (self.kind) {
+        .class => self == other,
         .closure => self.as(Closure).function.obj.eql(&other.as(Closure).function.obj),
         // strings are interned, so we can compare them by pointer
         .string => self == other,
@@ -57,6 +60,41 @@ pub fn eql(self: *Obj, other: *Obj) bool {
         .upvalue => self.as(Upvalue).location.eql(other.as(Upvalue).location.*),
     };
 }
+
+pub fn format(
+    obj: *Obj,
+    comptime fmt: []const u8,
+    options: std.fmt.FormatOptions,
+    writer: anytype,
+) !void {
+    _ = fmt;
+    _ = options;
+    try switch (obj.kind) {
+        .class => writer.print("{s}", .{obj.as(Obj.Class).name}),
+        .closure => writer.print("{s}", .{obj.as(Obj.Closure).function}),
+        .function => writer.print("{s}", .{obj.as(Obj.Function)}),
+        .native => writer.print("<native fn>", .{}),
+        .string => writer.print("{s}", .{obj.as(Obj.String)}),
+        // probably unreachable
+        .upvalue => writer.print("upvalue", .{}),
+    };
+}
+
+pub const Class = struct {
+    pub const kind = Kind.class;
+    const Self = @This();
+
+    obj: Obj,
+    name: *String,
+
+    pub fn init(vm: *Vm, name: *String) !*Self {
+        return try vm.allocate_object(Self, .{ .name = name });
+    }
+
+    pub fn deinit(self: *Self, vm: *Vm) void {
+        vm.allocator.destroy(self);
+    }
+};
 
 pub const Closure = struct {
     pub const kind = Kind.closure;
