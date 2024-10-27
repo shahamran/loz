@@ -44,40 +44,32 @@ pub inline fn allocator(self: *Self) Allocator {
 
 fn alloc(ctx: *anyopaque, len: usize, log2_buf_align: u8, ret_addr: usize) ?[*]u8 {
     const self: *Self = @ptrCast(@alignCast(ctx));
-    self.maybe_collect(len);
-    const ret = self.parent_allocator
-        .rawAlloc(len, log2_buf_align, ret_addr) orelse return null;
     self.bytes_allocated += len;
-    return ret;
+    self.maybe_collect();
+    return self.parent_allocator.rawAlloc(len, log2_buf_align, ret_addr);
 }
 
 fn resize(ctx: *anyopaque, buf: []u8, log2_buf_align: u8, new_len: usize, ret_addr: usize) bool {
     const self: *Self = @ptrCast(@alignCast(ctx));
     const old_len = buf.len;
     const abs_diff = if (new_len > old_len) new_len - old_len else old_len - new_len;
-
-    if (new_len > old_len) self.maybe_collect(abs_diff);
-
-    const resized = self.parent_allocator
-        .rawResize(buf, log2_buf_align, new_len, ret_addr);
-    if (!resized) return false;
     if (new_len > old_len) {
         self.bytes_allocated += abs_diff;
     } else {
         self.bytes_allocated -= abs_diff;
     }
-    return true;
+    if (new_len > old_len) self.maybe_collect();
+    return self.parent_allocator.rawResize(buf, log2_buf_align, new_len, ret_addr);
 }
 
 fn free(ctx: *anyopaque, buf: []u8, log2_buf_align: u8, ret_addr: usize) void {
     const self: *Self = @ptrCast(@alignCast(ctx));
-    self.parent_allocator
-        .rawFree(buf, log2_buf_align, ret_addr);
     self.bytes_allocated -= buf.len;
+    self.parent_allocator.rawFree(buf, log2_buf_align, ret_addr);
 }
 
-inline fn maybe_collect(self: *Self, additional: usize) void {
-    if (config.stress_gc or self.bytes_allocated + additional > self.next_gc) {
+inline fn maybe_collect(self: *Self) void {
+    if (config.stress_gc or self.bytes_allocated > self.next_gc) {
         self.collect_garbage();
     }
 }
