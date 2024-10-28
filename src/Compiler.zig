@@ -212,8 +212,9 @@ fn declaration(self: *Compiler) !void {
 fn class_declaration(self: *Compiler) !void {
     self.consume(.identifier, "Expected class name.");
 
-    const class_slot = try self.identifier_constant(&self.parser.previous);
-    const name = try Obj.String.copy(self.vm, self.parser.previous.text);
+    var name: *Obj.String = undefined;
+    const class_slot = try self.identifier_constant(&self.parser.previous, &name);
+    // create the class object at compile time.
     const class = try Obj.Class.init(self.vm, name);
     self.vm.global_values.items[class_slot] = class.obj.value();
 
@@ -223,14 +224,6 @@ fn class_declaration(self: *Compiler) !void {
 
     self.consume(.left_brace, "Expected '{' before class body.");
     self.consume(.right_brace, "Expected '}' after class body.");
-}
-
-fn class_name(self: *Compiler) ![2]u8 {
-    const name = &self.parser.previous;
-    const name_constant = try self.identifier_constant(name);
-    const s = try Obj.String.copy(self.vm, name.text);
-    const name_string = try self.make_constant(s.obj.value());
-    return .{ name_constant, name_string };
 }
 
 fn fun_declaration(self: *Compiler) !void {
@@ -493,11 +486,12 @@ fn parse_variable(self: *Compiler, error_message: []const u8) !u8 {
     self.consume(.identifier, error_message);
     self.declare_variable();
     if (self.current.scope_depth > 0) return 0;
-    return try self.identifier_constant(&self.parser.previous);
+    return try self.identifier_constant(&self.parser.previous, null);
 }
 
-fn identifier_constant(self: *Compiler, name: *const Scanner.Token) !u8 {
+fn identifier_constant(self: *Compiler, name: *const Scanner.Token, name_string: ?**Obj.String) !u8 {
     const ident = try Obj.String.copy(self.vm, name.text);
+    if (name_string) |s| s.* = ident;
     if (self.vm.global_names.get(ident)) |index|
         return @intFromFloat(index.number);
     try self.vm.global_values.push(self.vm.allocator, Value.undefined_);
@@ -519,7 +513,7 @@ fn named_variable(self: *Compiler, name: Scanner.Token, can_assign: bool) !void 
         get_op = .op_get_upvalue;
         set_op = .op_set_upvalue;
     } else {
-        arg = try self.identifier_constant(&name);
+        arg = try self.identifier_constant(&name, null);
         get_op = .op_get_global;
         set_op = .op_set_global;
     }
