@@ -16,6 +16,7 @@ vm: *Vm,
 valid: bool,
 parser: Parser,
 current: *Node,
+current_class: ?*Class,
 compiling_chunk: *Chunk,
 string_constants: Table,
 scanner: Scanner,
@@ -35,6 +36,7 @@ pub fn compile(self: *Compiler, source: []const u8) !?*Obj.Function {
     self.string_constants = Table.init(self.vm.allocator);
     defer self.string_constants.deinit();
 
+    self.current_class = null;
     // each compiler node lives entirely on the stack
     var node: Node = undefined;
     try node.init(self, .script);
@@ -47,6 +49,10 @@ pub fn compile(self: *Compiler, source: []const u8) !?*Obj.Function {
     const fun = node.end();
     return if (self.parser.had_error) null else fun;
 }
+
+const Class = struct {
+    enclosing: ?*Class,
+};
 
 const Parser = struct {
     current: Scanner.Token,
@@ -216,18 +222,22 @@ fn class_declaration(self: *Compiler) !void {
     const class_name = self.parser.previous;
     var name: *Obj.String = undefined;
     const class_slot = try self.identifier_constant(&self.parser.previous, &name);
-    var class: *Obj.Class = undefined;
+    var class_obj: *Obj.Class = undefined;
     // create the class object at compile time.
     {
         self.vm.push(name.obj.value());
         defer _ = self.vm.pop(); // gc dance
-        class = try Obj.Class.init(self.vm, name);
+        class_obj = try Obj.Class.init(self.vm, name);
     }
-    self.vm.global_values.items[class_slot] = class.obj.value();
+    self.vm.global_values.items[class_slot] = class_obj.obj.value();
 
     self.declare_variable();
     try self.emit_two(op_u8(.op_class), class_slot);
     try self.define_variable(class_slot);
+
+    var class = Class{ .enclosing = self.current_class };
+    self.current_class = &class;
+    defer self.current_class = class.enclosing;
 
     try self.named_variable(class_name, false);
     self.consume(.left_brace, "Expected '{' before class body.");
@@ -810,6 +820,10 @@ fn dot(self: *Compiler, can_assign: bool) Error!void {
 
 fn this(self: *Compiler, can_assign: bool) Error!void {
     _ = can_assign;
+    if (self.current_class == null) {
+        self.error_("Can't use 'this' outside of a class.");
+        return;
+    }
     try self.variable(false);
 }
 
