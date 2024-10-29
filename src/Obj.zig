@@ -8,7 +8,7 @@ const Vm = @import("Vm.zig");
 
 const Obj = @This();
 
-const Kind = enum {
+pub const Kind = enum {
     class,
     closure,
     function,

@@ -137,6 +137,10 @@ const CallFrame = struct {
         return self.constants()[self.read_byte()];
     }
 
+    inline fn read_global(self: *Self, vm: *Vm) *Value {
+        return &vm.global_values.items[self.read_byte()];
+    }
+
     inline fn constants(self: *Self) []Value {
         return self.closure.function.chunk.constants.items;
     }
@@ -182,7 +186,7 @@ fn run(vm: *Vm) !InterpretResult {
                 frame.slots[slot] = vm.peek(0);
             },
             .op_get_global => {
-                const value = vm.global_values.items[frame.read_byte()];
+                const value = frame.read_global(vm).*;
                 if (value == .undefined_) {
                     vm.runtime_error("Undefined variable.", .{});
                     return .runtime_error;
@@ -190,15 +194,15 @@ fn run(vm: *Vm) !InterpretResult {
                 vm.push(value);
             },
             .op_define_global => {
-                vm.global_values.items[frame.read_byte()] = vm.pop();
+                frame.read_global(vm).* = vm.pop();
             },
             .op_set_global => {
-                const index = frame.read_byte();
-                if (vm.global_values.items[index] == .undefined_) {
+                const global = frame.read_global(vm);
+                if (global.* == .undefined_) {
                     vm.runtime_error("Undefined variable.", .{});
                     return .runtime_error;
                 }
-                vm.global_values.items[index] = vm.peek(0);
+                global.* = vm.peek(0);
             },
             .op_get_upvalue => {
                 const slot = frame.read_byte();
@@ -208,13 +212,40 @@ fn run(vm: *Vm) !InterpretResult {
                 const slot = frame.read_byte();
                 frame.closure.upvalues[slot].?.location.* = vm.peek(0);
             },
+            .op_get_property => {
+                if (!vm.peek(0).is_obj(.instance)) {
+                    vm.runtime_error("Only instances have properties.", .{});
+                    return .runtime_error;
+                }
+                const instance = vm.peek(0).obj.as(Obj.Instance);
+                const name = frame.read_global(vm).obj.as(Obj.String);
+                if (instance.fields.get(name)) |value| {
+                    _ = vm.pop(); // instance
+                    vm.push(value);
+                } else {
+                    vm.runtime_error("Undefined property '{s}'.", .{name});
+                    return .runtime_error;
+                }
+            },
+            .op_set_property => {
+                if (!vm.peek(1).is_obj(.instance)) {
+                    vm.runtime_error("Only instances have properties.", .{});
+                    return .runtime_error;
+                }
+                const instance = vm.peek(1).obj.as(Obj.Instance);
+                const name = frame.read_global(vm).obj.as(Obj.String);
+                _ = try instance.fields.insert(name, vm.peek(0));
+                const value = vm.pop();
+                _ = vm.pop();
+                vm.push(value);
+            },
             .op_equal => {
                 const b = vm.pop();
                 const a = vm.pop();
                 vm.push(Value{ .bool_ = a.eql(b) });
             },
             .op_add => {
-                if (vm.peek(0).is_string() and vm.peek(1).is_string()) {
+                if (vm.peek(0).is_obj(.string) and vm.peek(1).is_obj(.string)) {
                     const b = vm.peek(0).obj.as(Obj.String);
                     const a = vm.peek(1).obj.as(Obj.String);
                     var result = try a.value.clone(vm.allocator);
@@ -299,8 +330,7 @@ fn run(vm: *Vm) !InterpretResult {
                 frame = &vm.frames[vm.frame_count - 1];
             },
             .op_class => {
-                const class = vm.global_values.items[frame.read_byte()];
-                vm.push(class);
+                vm.push(frame.read_global(vm).*);
             },
         }
     }

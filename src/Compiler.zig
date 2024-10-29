@@ -215,8 +215,12 @@ fn class_declaration(self: *Compiler) !void {
     var name: *Obj.String = undefined;
     const class_slot = try self.identifier_constant(&self.parser.previous, &name);
     // create the class object at compile time.
-    const class = try Obj.Class.init(self.vm, name);
-    self.vm.global_values.items[class_slot] = class.obj.value();
+    {
+        self.vm.push(name.obj.value());
+        defer _ = self.vm.pop(); // gc dance
+        const class = try Obj.Class.init(self.vm, name);
+        self.vm.global_values.items[class_slot] = class.obj.value();
+    }
 
     self.declare_variable();
     try self.emit_two(op_u8(.op_class), class_slot);
@@ -494,6 +498,10 @@ fn identifier_constant(self: *Compiler, name: *const Scanner.Token, name_string:
     if (name_string) |s| s.* = ident;
     if (self.vm.global_names.get(ident)) |index|
         return @intFromFloat(index.number);
+
+    self.vm.push(ident.obj.value());
+    defer _ = self.vm.pop(); // gc dance
+
     try self.vm.global_values.push(self.vm.allocator, Value.undefined_);
     const index = self.vm.global_values.items.len - 1;
     _ = try self.vm.global_names.insert(ident, Value{ .number = @floatFromInt(index) });
@@ -769,6 +777,19 @@ fn or_(self: *Compiler, can_assign: bool) Error!void {
     self.patch_jump(end_jump);
 }
 
+fn dot(self: *Compiler, can_assign: bool) Error!void {
+    self.consume(.identifier, "Expected property name after '.'.");
+    var s: *Obj.String = undefined;
+    const name = try self.identifier_constant(&self.parser.previous, &s);
+    self.vm.global_values.items[name] = s.obj.value();
+    if (can_assign and self.match(.equal)) {
+        try self.expression();
+        try self.emit_two(op_u8(.op_set_property), name);
+    } else {
+        try self.emit_two(op_u8(.op_get_property), name);
+    }
+}
+
 /// Parse table entry.
 const ParseRule = struct {
     prefix: ?*const fn (*Compiler, bool) Error!void,
@@ -783,7 +804,7 @@ const rules = std.EnumArray(Scanner.TokenType, ParseRule).init(.{
     .left_brace = .{ .prefix = null, .infix = null, .precedence = .none },
     .right_brace = .{ .prefix = null, .infix = null, .precedence = .none },
     .comma = .{ .prefix = null, .infix = null, .precedence = .none },
-    .dot = .{ .prefix = null, .infix = null, .precedence = .none },
+    .dot = .{ .prefix = null, .infix = dot, .precedence = .call },
     .minus = .{ .prefix = unary, .infix = binary, .precedence = .term },
     .plus = .{ .prefix = null, .infix = binary, .precedence = .term },
     .semicolon = .{ .prefix = null, .infix = null, .precedence = .none },
