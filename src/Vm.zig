@@ -348,6 +348,8 @@ fn call_value(vm: *Vm, callee: Value, arg_count: u8) !bool {
         .obj => |o| switch (o.kind) {
             .bound_method => {
                 const bound = o.as(Obj.BoundMethod);
+                const ptr = vm.stack_top - arg_count - 1;
+                ptr[0] = bound.receiver;
                 return vm.call(bound.method, arg_count);
             },
             .class => {

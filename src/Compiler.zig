@@ -82,7 +82,7 @@ pub const Node = struct {
         self.local_count += 1;
         local.depth = 0;
         local.is_captured = false;
-        local.name.text = "";
+        local.name.text = if (kind != .function) "this" else "";
     }
 
     pub fn end(self: *Node) *Obj.Function {
@@ -152,6 +152,7 @@ pub const Node = struct {
 
 pub const FunctionKind = enum {
     function,
+    method,
     script,
 };
 
@@ -242,7 +243,7 @@ fn method(self: *Compiler) !void {
     var name: *Obj.String = undefined;
     const name_slot = try self.identifier_constant(&self.parser.previous, &name);
     self.vm.global_values.items[name_slot] = name.obj.value();
-    const kind: FunctionKind = .function;
+    const kind: FunctionKind = .method;
     try self.function(kind);
     try self.emit_two(op_u8(.op_method), name_slot);
 }
@@ -807,6 +808,11 @@ fn dot(self: *Compiler, can_assign: bool) Error!void {
     }
 }
 
+fn this(self: *Compiler, can_assign: bool) Error!void {
+    _ = can_assign;
+    try self.variable(false);
+}
+
 /// Parse table entry.
 const ParseRule = struct {
     prefix: ?*const fn (*Compiler, bool) Error!void,
@@ -850,7 +856,7 @@ const rules = std.EnumArray(Scanner.TokenType, ParseRule).init(.{
     .print = .{ .prefix = null, .infix = null, .precedence = .none },
     .return_ = .{ .prefix = null, .infix = null, .precedence = .none },
     .super = .{ .prefix = null, .infix = null, .precedence = .none },
-    .this = .{ .prefix = null, .infix = null, .precedence = .none },
+    .this = .{ .prefix = this, .infix = null, .precedence = .none },
     .true_ = .{ .prefix = literal, .infix = null, .precedence = .none },
     .var_ = .{ .prefix = null, .infix = null, .precedence = .none },
     .while_ = .{ .prefix = null, .infix = null, .precedence = .none },
