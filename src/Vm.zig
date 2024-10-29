@@ -44,11 +44,12 @@ pub fn init(vm: *Vm, allocator: std.mem.Allocator) void {
 
 pub fn interpret(vm: *Vm, source: []const u8) !InterpretResult {
     var function = try vm.compiler.compile(source) orelse return .compile_error;
-
-    vm.push(function.obj.value());
-    const closure = try Obj.Closure.init(vm, function);
-    _ = vm.pop();
-
+    var closure: *Obj.Closure = undefined;
+    { // gc dance!
+        vm.push(function.obj.value());
+        defer _ = vm.pop();
+        closure = try Obj.Closure.init(vm, function);
+    }
     vm.push(closure.obj.value());
     _ = vm.call(closure, 0);
 
@@ -193,9 +194,7 @@ fn run(vm: *Vm) !InterpretResult {
                 }
                 vm.push(value);
             },
-            .op_define_global => {
-                frame.read_global(vm).* = vm.pop();
-            },
+            .op_define_global => frame.read_global(vm).* = vm.pop(),
             .op_set_global => {
                 const global = frame.read_global(vm);
                 if (global.* == .undefined_) {
@@ -329,9 +328,8 @@ fn run(vm: *Vm) !InterpretResult {
                 vm.push(result);
                 frame = &vm.frames[vm.frame_count - 1];
             },
-            .op_class => {
-                vm.push(frame.read_global(vm).*);
-            },
+            .op_class => vm.push(frame.read_global(vm).*),
+            .op_method => try vm.define_method(frame.read_global(vm).obj.as(Obj.String)),
         }
     }
 }
@@ -502,4 +500,11 @@ fn clock_native(arg_count: u8, args: [*]Value) Value {
     const timestamp: f64 = @floatFromInt(time.microTimestamp());
     const us_per_s: f64 = @floatFromInt(time.us_per_s);
     return Value{ .number = timestamp / us_per_s };
+}
+
+fn define_method(vm: *Vm, name: *Obj.String) !void {
+    const method = vm.peek(0);
+    const class = vm.peek(1).obj.as(Obj.Class);
+    _ = try class.methods.insert(name, method);
+    _ = vm.pop();
 }

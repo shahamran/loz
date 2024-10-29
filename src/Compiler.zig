@@ -212,22 +212,39 @@ fn declaration(self: *Compiler) !void {
 fn class_declaration(self: *Compiler) !void {
     self.consume(.identifier, "Expected class name.");
 
+    const class_name = self.parser.previous;
     var name: *Obj.String = undefined;
     const class_slot = try self.identifier_constant(&self.parser.previous, &name);
+    var class: *Obj.Class = undefined;
     // create the class object at compile time.
     {
         self.vm.push(name.obj.value());
         defer _ = self.vm.pop(); // gc dance
-        const class = try Obj.Class.init(self.vm, name);
-        self.vm.global_values.items[class_slot] = class.obj.value();
+        class = try Obj.Class.init(self.vm, name);
     }
+    self.vm.global_values.items[class_slot] = class.obj.value();
 
     self.declare_variable();
     try self.emit_two(op_u8(.op_class), class_slot);
     try self.define_variable(class_slot);
 
+    try self.named_variable(class_name, false);
     self.consume(.left_brace, "Expected '{' before class body.");
+    while (!self.check(.right_brace) and !self.check(.eof)) {
+        try self.method();
+    }
     self.consume(.right_brace, "Expected '}' after class body.");
+    try self.emit_byte(op_u8(.op_pop));
+}
+
+fn method(self: *Compiler) !void {
+    self.consume(.identifier, "Expected method name.");
+    var name: *Obj.String = undefined;
+    const name_slot = try self.identifier_constant(&self.parser.previous, &name);
+    self.vm.global_values.items[name_slot] = name.obj.value();
+    const kind: FunctionKind = .function;
+    try self.function(kind);
+    try self.emit_two(op_u8(.op_method), name_slot);
 }
 
 fn fun_declaration(self: *Compiler) !void {

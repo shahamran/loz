@@ -84,6 +84,7 @@ pub const OpCode = enum(u8) {
     op_close_upvalue,
     op_return,
     op_class,
+    op_method,
 };
 
 pub const LineInfo = struct {

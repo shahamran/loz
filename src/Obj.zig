@@ -91,12 +91,17 @@ pub const Class = struct {
 
     obj: Obj,
     name: *String,
+    methods: Table,
 
     pub fn init(vm: *Vm, name: *String) !*Self {
-        return try vm.allocate_object(Self, .{ .name = name });
+        return try vm.allocate_object(Self, .{
+            .name = name,
+            .methods = Table.init(vm.allocator),
+        });
     }
 
     pub fn deinit(self: *Self, vm: *Vm) void {
+        self.methods.deinit();
         vm.allocator.destroy(self);
     }
 };
@@ -112,7 +117,10 @@ pub const Closure = struct {
     pub fn init(vm: *Vm, function: *Function) !*Self {
         const upvalues = try vm.allocator.alloc(?*Upvalue, function.upvalue_count);
         for (upvalues) |*v| v.* = null;
-        return try vm.allocate_object(Self, .{ .function = function, .upvalues = upvalues });
+        return try vm.allocate_object(Self, .{
+            .function = function,
+            .upvalues = upvalues,
+        });
     }
 
     pub fn deinit(self: *Self, vm: *Vm) void {
@@ -164,7 +172,10 @@ pub const Instance = struct {
     fields: Table,
 
     pub fn init(vm: *Vm, class: *Class) !*Self {
-        return try vm.allocate_object(Self, .{ .class = class, .fields = Table.init(vm.allocator) });
+        return try vm.allocate_object(Self, .{
+            .class = class,
+            .fields = Table.init(vm.allocator),
+        });
     }
 
     pub fn deinit(self: *Self, vm: *Vm) void {
