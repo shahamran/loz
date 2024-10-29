@@ -9,6 +9,7 @@ const Vm = @import("Vm.zig");
 const Obj = @This();
 
 pub const Kind = enum {
+    bound_method,
     class,
     closure,
     function,
@@ -39,6 +40,7 @@ pub fn deinit(obj: *Obj, vm: *Vm) void {
         std.debug.print("0x{x} free {s}\n", .{ @intFromPtr(obj), @tagName(obj.kind) });
     }
     switch (obj.kind) {
+        .bound_method => obj.as(BoundMethod).deinit(vm),
         .class => obj.as(Class).deinit(vm),
         .closure => obj.as(Closure).deinit(vm),
         .function => obj.as(Function).deinit(vm),
@@ -54,6 +56,7 @@ pub fn eql(self: *Obj, other: *Obj) bool {
         return false;
     }
     return switch (self.kind) {
+        .bound_method => self == other,
         .class => self == other,
         .closure => self.as(Closure).function.obj.eql(&other.as(Closure).function.obj),
         // strings are interned, so we can compare them by pointer
@@ -74,16 +77,37 @@ pub fn format(
     _ = fmt;
     _ = options;
     try switch (obj.kind) {
-        .class => writer.print("{s}", .{obj.as(Obj.Class).name}),
-        .closure => writer.print("{s}", .{obj.as(Obj.Closure).function}),
-        .function => writer.print("{s}", .{obj.as(Obj.Function)}),
-        .instance => writer.print("{s} instance", .{obj.as(Obj.Instance).class.name}),
+        .bound_method => writer.print("{s}", .{obj.as(BoundMethod).method.function}),
+        .class => writer.print("{s}", .{obj.as(Class).name}),
+        .closure => writer.print("{s}", .{obj.as(Closure).function}),
+        .function => writer.print("{s}", .{obj.as(Function)}),
+        .instance => writer.print("{s} instance", .{obj.as(Instance).class.name}),
         .native => writer.print("<native fn>", .{}),
-        .string => writer.print("{s}", .{obj.as(Obj.String)}),
+        .string => writer.print("{s}", .{obj.as(String)}),
         // probably unreachable
         .upvalue => writer.print("upvalue", .{}),
     };
 }
+
+pub const BoundMethod = struct {
+    pub const kind = Kind.bound_method;
+    const Self = @This();
+
+    obj: Obj,
+    receiver: Value,
+    method: *Closure,
+
+    pub fn init(vm: *Vm, receiver: Value, method: *Closure) !*Self {
+        return try vm.allocate_object(Self, .{
+            .receiver = receiver,
+            .method = method,
+        });
+    }
+
+    pub fn deinit(self: *Self, vm: *Vm) void {
+        vm.allocator.destroy(self);
+    }
+};
 
 pub const Class = struct {
     pub const kind = Kind.class;

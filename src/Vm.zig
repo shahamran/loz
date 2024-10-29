@@ -221,8 +221,7 @@ fn run(vm: *Vm) !InterpretResult {
                 if (instance.fields.get(name)) |value| {
                     _ = vm.pop(); // instance
                     vm.push(value);
-                } else {
-                    vm.runtime_error("Undefined property '{s}'.", .{name});
+                } else if (!try vm.bind_method(instance.class, name)) {
                     return .runtime_error;
                 }
             },
@@ -347,6 +346,10 @@ inline fn peek(vm: *Vm, distance: usize) Value {
 fn call_value(vm: *Vm, callee: Value, arg_count: u8) !bool {
     switch (callee) {
         .obj => |o| switch (o.kind) {
+            .bound_method => {
+                const bound = o.as(Obj.BoundMethod);
+                return vm.call(bound.method, arg_count);
+            },
             .class => {
                 const class = o.as(Obj.Class);
                 const ptr = vm.stack_top - arg_count - 1;
@@ -507,4 +510,15 @@ fn define_method(vm: *Vm, name: *Obj.String) !void {
     const class = vm.peek(1).obj.as(Obj.Class);
     _ = try class.methods.insert(name, method);
     _ = vm.pop();
+}
+
+fn bind_method(vm: *Vm, class: *Obj.Class, name: *Obj.String) !bool {
+    const method = class.methods.get(name) orelse {
+        vm.runtime_error("Undefined property '{s}'.", .{name});
+        return false;
+    };
+    const bound = try Obj.BoundMethod.init(vm, vm.peek(0), method.obj.as(Obj.Closure));
+    _ = vm.pop();
+    vm.push(bound.obj.value());
+    return true;
 }
