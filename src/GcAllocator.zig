@@ -131,7 +131,8 @@ inline fn mark_value(self: *Self, value: Value) void {
 
 fn mark_table(self: *Self, table: *Table) void {
     for (table.entries) |*entry| {
-        self.mark_object(@ptrCast(entry.key));
+        const key: ?*Obj = if (entry.key) |k| &k.obj else null;
+        self.mark_object(key);
         self.mark_value(entry.value);
     }
 }
@@ -171,6 +172,11 @@ fn blacken_object(self: *Self, object: *Obj) void {
             const fun = object.as(Obj.Function);
             if (fun.name) |s| self.mark_object(&s.obj);
             for (fun.chunk.constants.items) |constant| self.mark_value(constant);
+        },
+        .instance => {
+            const inst = object.as(Obj.Instance);
+            self.mark_object(&inst.class.obj);
+            self.mark_table(&inst.fields);
         },
         .upvalue => self.mark_value(object.as(Obj.Upvalue).closed),
         .native, .string => {},

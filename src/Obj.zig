@@ -2,6 +2,7 @@ const std = @import("std");
 const config = @import("config");
 const string = @import("string.zig");
 const Chunk = @import("Chunk.zig");
+const Table = @import("Table.zig");
 const Value = @import("value.zig").Value;
 const Vm = @import("Vm.zig");
 
@@ -11,6 +12,7 @@ const Kind = enum {
     class,
     closure,
     function,
+    instance,
     native,
     string,
     upvalue,
@@ -40,6 +42,7 @@ pub fn deinit(obj: *Obj, vm: *Vm) void {
         .class => obj.as(Class).deinit(vm),
         .closure => obj.as(Closure).deinit(vm),
         .function => obj.as(Function).deinit(vm),
+        .instance => obj.as(Instance).deinit(vm),
         .native => obj.as(Native).deinit(vm),
         .string => obj.as(String).deinit(vm),
         .upvalue => obj.as(Upvalue).deinit(vm),
@@ -57,6 +60,7 @@ pub fn eql(self: *Obj, other: *Obj) bool {
         .string => self == other,
         .native => self == other,
         .function => self == other,
+        .instance => self == other,
         .upvalue => self.as(Upvalue).location.eql(other.as(Upvalue).location.*),
     };
 }
@@ -73,6 +77,7 @@ pub fn format(
         .class => writer.print("{s}", .{obj.as(Obj.Class).name}),
         .closure => writer.print("{s}", .{obj.as(Obj.Closure).function}),
         .function => writer.print("{s}", .{obj.as(Obj.Function)}),
+        .instance => writer.print("{s} instance", .{obj.as(Obj.Instance).class.name}),
         .native => writer.print("<native fn>", .{}),
         .string => writer.print("{s}", .{obj.as(Obj.String)}),
         // probably unreachable
@@ -147,6 +152,24 @@ pub const Function = struct {
             writer.print("<fn {s}>", .{name.value.as_slice()})
         else
             writer.print("<script>", .{});
+    }
+};
+
+pub const Instance = struct {
+    pub const kind = Kind.instance;
+    const Self = @This();
+
+    obj: Obj,
+    class: *Class,
+    fields: Table,
+
+    pub fn init(vm: *Vm, class: *Class) !*Self {
+        return try vm.allocate_object(Self, .{ .class = class, .fields = Table.init(vm.allocator) });
+    }
+
+    pub fn deinit(self: *Self, vm: *Vm) void {
+        self.fields.deinit();
+        vm.allocator.destroy(self);
     }
 };
 

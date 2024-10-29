@@ -263,7 +263,7 @@ fn run(vm: *Vm) !InterpretResult {
             },
             .op_call => {
                 const arg_count = frame.read_byte();
-                if (!vm.call_value(vm.peek(arg_count), arg_count)) {
+                if (!try vm.call_value(vm.peek(arg_count), arg_count)) {
                     return .runtime_error;
                 }
                 frame = &vm.frames[vm.frame_count - 1];
@@ -316,9 +316,15 @@ inline fn peek(vm: *Vm, distance: usize) Value {
     return (vm.stack_top - 1 - distance)[0];
 }
 
-fn call_value(vm: *Vm, callee: Value, arg_count: u8) bool {
+fn call_value(vm: *Vm, callee: Value, arg_count: u8) !bool {
     switch (callee) {
         .obj => |o| switch (o.kind) {
+            .class => {
+                const class = o.as(Obj.Class);
+                const ptr = vm.stack_top - arg_count - 1;
+                ptr[0] = (try Obj.Instance.init(vm, class)).obj.value();
+                return true;
+            },
             .closure => return vm.call(o.as(Obj.Closure), arg_count),
             .native => {
                 const native = o.as(Obj.Native);
