@@ -114,6 +114,7 @@ fn mark_roots(self: *Self) void {
     self.mark_table(&self.vm.global_names);
     for (self.vm.global_values.items) |global| self.mark_value(global);
     self.mark_compiler_roots();
+    if (self.vm.init_string) |s| self.mark_object(&s.obj);
 }
 
 fn mark_compiler_roots(self: *Self) void {

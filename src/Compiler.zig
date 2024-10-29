@@ -158,6 +158,7 @@ pub const Node = struct {
 
 pub const FunctionKind = enum {
     function,
+    initializer,
     method,
     script,
 };
@@ -253,7 +254,8 @@ fn method(self: *Compiler) !void {
     var name: *Obj.String = undefined;
     const name_slot = try self.identifier_constant(&self.parser.previous, &name);
     self.vm.global_values.items[name_slot] = name.obj.value();
-    const kind: FunctionKind = .method;
+    const kind: FunctionKind =
+        if (std.mem.eql(u8, "init", self.parser.previous.text)) .initializer else .method;
     try self.function(kind);
     try self.emit_two(op_u8(.op_method), name_slot);
 }
@@ -369,6 +371,9 @@ fn return_statement(self: *Compiler) Error!void {
     if (self.match(.semicolon)) {
         try self.emit_return();
     } else {
+        if (self.current.kind == .initializer and !self.check(.semicolon)) {
+            self.error_("Can't return a value from an initializer.");
+        }
         try self.expression();
         self.consume(.semicolon, "Expected ';' after return value.");
         try self.emit_byte(op_u8(.op_return));
@@ -595,7 +600,11 @@ inline fn emit_byte(self: *Compiler, byte: u8) !void {
 }
 
 pub inline fn emit_return(self: *Compiler) !void {
-    try self.emit_byte(op_u8(.op_nil));
+    if (self.current.kind == .initializer) {
+        try self.emit_two(op_u8(.op_get_local), 0);
+    } else {
+        try self.emit_byte(op_u8(.op_nil));
+    }
     try self.emit_byte(op_u8(.op_return));
 }
 

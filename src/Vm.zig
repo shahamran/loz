@@ -27,6 +27,7 @@ global_names: Table, // maps global variable names to their indices in the globa
 global_values: List(Value),
 
 strings: Table, // interned strings
+init_string: ?*Obj.String, // literal "init"
 
 open_upvalues: ?*Obj.Upvalue, // singly linked list of open upvalues
 objects: ?*Obj, // singly linked list of all allocated objects
@@ -39,6 +40,8 @@ pub fn init(vm: *Vm, allocator: std.mem.Allocator) void {
     vm.global_values = List(Value).init();
     vm.strings = Table.init(allocator);
     vm.objects = null;
+    vm.init_string = null;
+    vm.init_string = Obj.String.copy(vm, "init") catch unreachable;
     vm.define_native("clock", 0, clock_native) catch unreachable;
 }
 
@@ -89,10 +92,11 @@ pub fn allocate_object(vm: *Vm, comptime T: type, args: anytype) !*T {
 }
 
 pub fn deinit(vm: *Vm) void {
-    vm.free_objects();
+    vm.init_string = null;
+    vm.strings.deinit();
     vm.global_names.deinit();
     vm.global_values.deinit(vm.allocator);
-    vm.strings.deinit();
+    vm.free_objects();
 }
 
 pub inline fn push(vm: *Vm, value: Value) void {
@@ -356,6 +360,12 @@ fn call_value(vm: *Vm, callee: Value, arg_count: u8) !bool {
                 const class = o.as(Obj.Class);
                 const ptr = vm.stack_top - arg_count - 1;
                 ptr[0] = (try Obj.Instance.init(vm, class)).obj.value();
+                if (class.methods.get(vm.init_string.?)) |initializer| {
+                    return vm.call(initializer.obj.as(Obj.Closure), arg_count);
+                } else if (arg_count != 0) {
+                    vm.runtime_error("Expected 0 arguments but got {d}.", .{arg_count});
+                    return false;
+                }
                 return true;
             },
             .closure => return vm.call(o.as(Obj.Closure), arg_count),
