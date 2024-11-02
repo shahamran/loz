@@ -49,6 +49,7 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
         .op_jump_if_false => return jump_instruction("OP_JUMP_IF_FALSE", .forward, chunk, offset),
         .op_loop => return jump_instruction("OP_LOOP", .backward, chunk, offset),
         .op_call => return byte_instruction("OP_CALL", chunk, offset),
+        .op_invoke => return invoke_instruction("OP_INVOKE", chunk, offset),
         .op_closure => {
             const constant = chunk.code.items[offset + 1];
             const val = chunk.constants.items[constant];
@@ -105,5 +106,12 @@ fn jump_instruction(name: []const u8, direction: Direction, chunk: *const Chunk,
     var jump = (@as(usize, chunk.code.items[offset + 1]) << 8) | @as(usize, chunk.code.items[offset + 2]);
     jump = if (direction == .forward) offset + 3 + jump else offset + 3 - jump;
     std.debug.print("{s: <16} {d: >4} -> {d}\n", .{ name, offset, jump });
+    return offset + 3;
+}
+
+fn invoke_instruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
+    const constant = chunk.code.items[offset + 1];
+    const arg_count = chunk.code.items[offset + 2];
+    std.debug.print("{s: <16} ({d} args) {d: >4}\n", .{ name, arg_count, constant });
     return offset + 3;
 }

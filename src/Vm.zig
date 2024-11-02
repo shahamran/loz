@@ -301,6 +301,14 @@ fn run(vm: *Vm) !InterpretResult {
                 }
                 frame = &vm.frames[vm.frame_count - 1];
             },
+            .op_invoke => {
+                const method = frame.read_global(vm).obj.as(Obj.String);
+                const arg_count = frame.read_byte();
+                if (!try vm.invoke(method, arg_count)) {
+                    return .runtime_error;
+                }
+                frame = &vm.frames[vm.frame_count - 1];
+            },
             .op_closure => {
                 const function = frame.read_constant().obj.as(Obj.Function);
                 const closure = try Obj.Closure.init(vm, function);
@@ -387,6 +395,28 @@ fn call_value(vm: *Vm, callee: Value, arg_count: u8) !bool {
     }
     vm.runtime_error("Can only call functions and classes.", .{});
     return false;
+}
+
+fn invoke(vm: *Vm, name: *Obj.String, arg_count: u8) !bool {
+    const receiver = vm.peek(arg_count);
+    if (!receiver.is_obj(.instance)) {
+        vm.runtime_error("Only instances have methods.", .{});
+        return false;
+    }
+    const instance = receiver.obj.as(Obj.Instance);
+    if (instance.fields.get(name)) |value| {
+        (vm.stack_top - arg_count - 1)[0] = value;
+        return vm.call_value(value, arg_count);
+    }
+    return vm.invoke_from_class(instance.class, name, arg_count);
+}
+
+fn invoke_from_class(vm: *Vm, class: *Obj.Class, name: *Obj.String, arg_count: u8) bool {
+    const method = class.methods.get(name) orelse {
+        vm.runtime_error("Undefined property '{s}'.", .{name});
+        return false;
+    };
+    return vm.call(method.obj.as(Obj.Closure), arg_count);
 }
 
 fn capture_upvalue(vm: *Vm, local: *Value) !*Obj.Upvalue {

@@ -822,6 +822,10 @@ fn dot(self: *Compiler, can_assign: bool) Error!void {
     if (can_assign and self.match(.equal)) {
         try self.expression();
         try self.emit_two(op_u8(.op_set_property), name);
+    } else if (self.match(.left_paren)) {
+        const arg_count = try self.argument_list();
+        try self.emit_two(op_u8(.op_invoke), name);
+        try self.emit_byte(arg_count);
     } else {
         try self.emit_two(op_u8(.op_get_property), name);
     }
