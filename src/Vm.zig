@@ -532,8 +532,8 @@ fn define_native(vm: *Vm, name: []const u8, arity: u8, function: Obj.NativeFn) !
     vm.push((try Obj.String.copy(vm, name)).obj.value());
     vm.push((try Obj.Native.init(vm, arity, function)).obj.value());
     const value = Value{ .number = @floatFromInt(vm.global_values.items.len) };
-    _ = try vm.global_names.insert(vm.stack[0].obj.as(Obj.String), value);
-    try vm.global_values.push(vm.allocator, vm.stack[1]);
+    _ = try vm.global_names.insert(vm.peek(1).obj.as(Obj.String), value);
+    try vm.global_values.push(vm.allocator, vm.peek(0));
     _ = vm.pop();
     _ = vm.pop();
 }
