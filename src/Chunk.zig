@@ -85,6 +85,7 @@ pub const OpCode = enum(u8) {
     op_close_upvalue,
     op_return,
     op_class,
+    op_inherit,
     op_method,
 };
 

@@ -92,10 +92,10 @@ fn find_entry(entries: []Entry, key: *Obj.String) *Entry {
     }
 }
 
-fn copy_all(self: *const Self, other: *Self) !void {
+pub fn copy_all(self: *const Self, other: *Self) !void {
     for (self.entries) |entry| {
         if (entry.key) |key|
-            try other.insert(key, entry.value);
+            _ = try other.insert(key, entry.value);
     }
 }
 

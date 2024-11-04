@@ -349,6 +349,16 @@ fn run(vm: *Vm) !InterpretResult {
                 const class = try Obj.Class.init(vm, name);
                 vm.push(class.obj.value());
             },
+            .op_inherit => {
+                const superclass = vm.peek(1);
+                if (!superclass.is_obj(.class)) {
+                    vm.runtime_error("Superclass must be a class.", .{});
+                    return .runtime_error;
+                }
+                const subclass = vm.peek(0).obj.as(Obj.Class);
+                try superclass.obj.as(Obj.Class).methods.copy_all(&subclass.methods);
+                _ = vm.pop();
+            },
             .op_method => try vm.define_method(frame.read_global(vm).obj.as(Obj.String)),
         }
     }

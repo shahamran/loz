@@ -230,6 +230,16 @@ fn class_declaration(self: *Compiler) !void {
     self.current_class = &class;
     defer self.current_class = class.enclosing;
 
+    if (self.match(.less)) {
+        self.consume(.identifier, "Expected superclass name.");
+        try self.variable(false);
+        if (name.eql(&self.parser.previous)) {
+            self.error_("A class can't inherit itself.");
+        }
+        try self.named_variable(name, false);
+        try self.emit_byte(op_u8(.op_inherit));
+    }
+
     try self.named_variable(name, false);
     self.consume(.left_brace, "Expected '{' before class body.");
     while (!self.check(.right_brace) and !self.check(.eof)) {
