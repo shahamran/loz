@@ -17,6 +17,7 @@ const Vm = @This();
 
 allocator: std.mem.Allocator,
 out_writer: std.io.AnyWriter,
+err_writer: std.io.AnyWriter,
 compiler: Compiler,
 frames: [FRAMES_MAX]CallFrame,
 frame_count: u8,
@@ -36,11 +37,13 @@ objects: ?*Obj, // singly linked list of all allocated objects
 pub fn init(vm: *Vm, args: struct {
     allocator: std.mem.Allocator,
     out_writer: std.io.AnyWriter = std.io.getStdOut().writer().any(),
+    err_writer: std.io.AnyWriter = std.io.getStdErr().writer().any(),
 }) void {
     vm.reset_stack();
     vm.compiler.init(vm);
     vm.allocator = args.allocator;
     vm.out_writer = args.out_writer;
+    vm.err_writer = args.err_writer;
     vm.global_names = Table.init(args.allocator);
     vm.global_values = List(Value).init();
     vm.strings = Table.init(args.allocator);
@@ -543,8 +546,8 @@ fn less(a: f64, b: f64) bool {
 }
 
 fn runtime_error(vm: *Vm, comptime fmt: []const u8, args: anytype) void {
-    vm.out_writer.print(fmt, args) catch unreachable;
-    vm.out_writer.print("\n", .{}) catch unreachable;
+    vm.err_writer.print(fmt, args) catch unreachable;
+    vm.err_writer.print("\n", .{}) catch unreachable;
 
     var i = vm.frame_count;
     while (i > 0) {
@@ -553,11 +556,11 @@ fn runtime_error(vm: *Vm, comptime fmt: []const u8, args: anytype) void {
         const function = frame.closure.function;
         const instruction = frame.offset() - 1;
         const line = function.chunk.get_line(instruction);
-        vm.out_writer.print("[line {d}] in ", .{line}) catch unreachable;
+        vm.err_writer.print("[line {d}] in ", .{line}) catch unreachable;
         if (function.name) |name| {
-            vm.out_writer.print("{s}()\n", .{name.value.as_slice()}) catch unreachable;
+            vm.err_writer.print("{s}()\n", .{name.value.as_slice()}) catch unreachable;
         } else {
-            vm.out_writer.print("script\n", .{}) catch unreachable;
+            vm.err_writer.print("script\n", .{}) catch unreachable;
         }
     }
     vm.reset_stack();
@@ -602,22 +605,35 @@ fn bind_method(vm: *Vm, class: *Obj.Class, name: *Obj.String) !bool {
 
 pub usingnamespace if (@import("builtin").is_test)
     struct {
-        fn testVm(source: []const u8) !struct {
+        const TestResult = struct {
             result: InterpretResult,
             output: std.ArrayList(u8),
-        } {
+            err: std.ArrayList(u8),
+
+            fn deinit(self: *@This()) void {
+                self.output.deinit();
+                self.err.deinit();
+            }
+        };
+
+        fn testVm(source: []const u8) !TestResult {
             const GcAllocator = @import("GcAllocator.zig");
             const allocator = std.testing.allocator;
 
             var vm: Vm = undefined;
             var gca = GcAllocator.init(&vm, allocator);
             var out = std.ArrayList(u8).init(allocator);
+            var err = std.ArrayList(u8).init(allocator);
             defer gca.deinit();
-            vm.init(.{ .allocator = gca.allocator(), .out_writer = out.writer().any() });
+            vm.init(.{
+                .allocator = gca.allocator(),
+                .out_writer = out.writer().any(),
+                .err_writer = err.writer().any(),
+            });
             defer vm.deinit();
 
             const result = try vm.interpret(source);
-            return .{ .result = result, .output = out };
+            return .{ .result = result, .output = out, .err = err };
         }
     }
 else
@@ -627,19 +643,19 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
 test "string equality" {
-    const t = try Vm.testVm(
+    var t = try Vm.testVm(
         \\ print "hello" == "world";
         \\ print "hello" == "hello";
         \\ var x = "hello";
         \\ print x == "hello";
     );
-    defer t.output.deinit();
+    defer t.deinit();
     try expectEqual(.ok, t.result);
     try expectEqualStrings("false\ntrue\ntrue\n", t.output.items);
 }
 
 test "class - nested this" {
-    const t = try Vm.testVm(
+    var t = try Vm.testVm(
         \\ class Nested {
         \\   method() {
         \\     fun function() {
@@ -651,7 +667,7 @@ test "class - nested this" {
         \\ }
         \\ Nested().method();
     );
-    defer t.output.deinit();
+    defer t.deinit();
     try expectEqual(.ok, t.result);
     try expectEqualStrings("Nested instance\n", t.output.items);
 }
@@ -659,7 +675,7 @@ test "class - nested this" {
 test "class - invalid this" {
     {
         var t = try Vm.testVm("print this;");
-        defer t.output.deinit();
+        defer t.deinit();
         try expectEqual(.compile_error, t.result);
     }
     {
@@ -668,13 +684,13 @@ test "class - invalid this" {
             \\   print this;
             \\ }
         );
-        defer t.output.deinit();
+        defer t.deinit();
         try expectEqual(.compile_error, t.result);
     }
 }
 
 test "class - invoke field" {
-    const t = try Vm.testVm(
+    var t = try Vm.testVm(
         \\ class Oops {
         \\   init() {
         \\     fun f() {
@@ -687,13 +703,13 @@ test "class - invoke field" {
         \\ var oops = Oops();
         \\ oops.field();
     );
-    defer t.output.deinit();
+    defer t.deinit();
     try expectEqual(.ok, t.result);
     try expectEqualStrings("not a method\n", t.output.items);
 }
 
 test "globals - function equality" {
-    const t = try Vm.testVm(
+    var t = try Vm.testVm(
         \\ fun uniq() { return 1; }
         \\
         \\ fun outer() {
@@ -706,13 +722,13 @@ test "globals - function equality" {
         \\ var uv = uniq;
         \\ print uv == uniq;
     );
-    defer t.output.deinit();
+    defer t.deinit();
     try expectEqual(.ok, t.result);
     try expectEqualStrings("false\ntrue\n", t.output.items);
 }
 
 test "globals - class equality" {
-    const t = try Vm.testVm(
+    var t = try Vm.testVm(
         \\ class uniq { init(a) { this.a = a; } }
         \\
         \\ fun outer() {
@@ -725,13 +741,13 @@ test "globals - class equality" {
         \\ var uv = uniq;
         \\ print uv == uniq;
     );
-    defer t.output.deinit();
+    defer t.deinit();
     try expectEqual(.ok, t.result);
     try expectEqualStrings("false\ntrue\n", t.output.items);
 }
 
 test "inheritance - method call" {
-    const t = try Vm.testVm(
+    var t = try Vm.testVm(
         \\ class Doughnut {
         \\   cook() {
         \\     print "Dunk in the fryer.";
@@ -746,7 +762,7 @@ test "inheritance - method call" {
         \\ c.cook();
         \\ c.finish();
     );
-    defer t.output.deinit();
+    defer t.deinit();
     try expectEqual(.ok, t.result);
     try expectEqualStrings(
         "Dunk in the fryer.\n" ++
@@ -756,7 +772,7 @@ test "inheritance - method call" {
 }
 
 test "inheritance - super" {
-    const t = try Vm.testVm(
+    var t = try Vm.testVm(
         \\ class A {
         \\   method() {
         \\     print "A method";
@@ -774,7 +790,7 @@ test "inheritance - super" {
         \\ class C < B {}
         \\ C().test();
     );
-    defer t.output.deinit();
+    defer t.deinit();
     try expectEqual(.ok, t.result);
     try expectEqualStrings("A method\n", t.output.items);
 }

@@ -235,7 +235,7 @@ fn class_declaration(self: *Compiler) !void {
         self.consume(.identifier, "Expected superclass name.");
         try self.variable(false);
         if (name.eql(&self.parser.previous)) {
-            self.error_("A class can't inherit itself.");
+            self.error_("A class can't inherit from itself.");
         }
 
         self.begin_scope();
@@ -683,16 +683,16 @@ inline fn error_at_current(self: *Compiler, message: []const u8) void {
 fn error_at(self: *Compiler, token: *Scanner.Token, message: []const u8) void {
     if (self.parser.panic_mode) return;
     self.parser.panic_mode = true;
-    self.vm.out_writer.print("[line {d}] Error", .{token.line}) catch unreachable;
+    self.vm.err_writer.print("[line {d}] Error", .{token.line}) catch unreachable;
 
     if (token.kind == .eof) {
-        self.vm.out_writer.print(" at end", .{}) catch unreachable;
+        self.vm.err_writer.print(" at end", .{}) catch unreachable;
     } else if (token.kind == .error_) {
         // Nothing.
     } else {
-        self.vm.out_writer.print(" at '{s}'", .{token.text}) catch unreachable;
+        self.vm.err_writer.print(" at '{s}'", .{token.text}) catch unreachable;
     }
-    self.vm.out_writer.print(": {s}\n", .{message}) catch unreachable;
+    self.vm.err_writer.print(": {s}\n", .{message}) catch unreachable;
     self.parser.had_error = true;
 }
 
