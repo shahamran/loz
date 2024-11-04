@@ -344,7 +344,11 @@ fn run(vm: *Vm) !InterpretResult {
                 vm.push(result);
                 frame = &vm.frames[vm.frame_count - 1];
             },
-            .op_class => vm.push(frame.read_global(vm).*),
+            .op_class => {
+                const name = frame.read_constant().obj.as(Obj.String);
+                const class = try Obj.Class.init(vm, name);
+                vm.push(class.obj.value());
+            },
             .op_method => try vm.define_method(frame.read_global(vm).obj.as(Obj.String)),
         }
     }

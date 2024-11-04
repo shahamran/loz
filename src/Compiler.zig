@@ -218,29 +218,19 @@ fn declaration(self: *Compiler) !void {
 }
 
 fn class_declaration(self: *Compiler) !void {
-    self.consume(.identifier, "Expected class name.");
-
-    const class_name = self.parser.previous;
-    var name: *Obj.String = undefined;
-    const class_slot = try self.identifier_constant(&self.parser.previous, &name);
-    var class_obj: *Obj.Class = undefined;
-    // create the class object at compile time.
-    {
-        self.vm.push(name.obj.value());
-        defer _ = self.vm.pop(); // gc dance
-        class_obj = try Obj.Class.init(self.vm, name);
-    }
-    self.vm.global_values.items[class_slot] = class_obj.obj.value();
-
-    self.declare_variable();
-    try self.emit_two(op_u8(.op_class), class_slot);
-    try self.define_variable(class_slot);
+    const global = try self.parse_variable("Expected class name.");
+    self.mark_initialized();
+    const name = self.parser.previous;
+    const name_obj = try Obj.String.copy(self.vm, name.text);
+    const name_slot = try self.make_constant(name_obj.obj.value());
+    try self.emit_two(op_u8(.op_class), name_slot);
+    try self.define_variable(global);
 
     var class = Class{ .enclosing = self.current_class };
     self.current_class = &class;
     defer self.current_class = class.enclosing;
 
-    try self.named_variable(class_name, false);
+    try self.named_variable(name, false);
     self.consume(.left_brace, "Expected '{' before class body.");
     while (!self.check(.right_brace) and !self.check(.eof)) {
         try self.method();
