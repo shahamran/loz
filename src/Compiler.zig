@@ -675,16 +675,16 @@ inline fn error_at_current(self: *Compiler, message: []const u8) void {
 fn error_at(self: *Compiler, token: *Scanner.Token, message: []const u8) void {
     if (self.parser.panic_mode) return;
     self.parser.panic_mode = true;
-    std.debug.print("[line {d}] Error", .{token.line});
+    self.vm.out_writer.print("[line {d}] Error", .{token.line}) catch unreachable;
 
     if (token.kind == .eof) {
-        std.debug.print(" at end", .{});
+        self.vm.out_writer.print(" at end", .{}) catch unreachable;
     } else if (token.kind == .error_) {
         // Nothing.
     } else {
-        std.debug.print(" at '{s}'", .{token.text});
+        self.vm.out_writer.print(" at '{s}'", .{token.text}) catch unreachable;
     }
-    std.debug.print(": {s}\n", .{message});
+    self.vm.out_writer.print(": {s}\n", .{message}) catch unreachable;
     self.parser.had_error = true;
 }
 

@@ -15,7 +15,7 @@ pub fn main() !void {
     var gca = GcAllocator.init(&vm, allocator);
     defer gca.deinit();
 
-    vm.init(gca.allocator());
+    vm.init(.{ .allocator = gca.allocator() });
     defer vm.deinit();
 
     const args = try std.process.argsAlloc(allocator);
@@ -26,7 +26,7 @@ pub fn main() !void {
     } else if (args.len == 2) {
         try run_file(&vm, args.ptr[1]);
     } else {
-        std.debug.print("Usage: {s} [path]\n", .{args.ptr[0]});
+        std.debug.print("Usage: {s} [path]\n", .{args[0]});
         std.process.exit(64);
     }
 }

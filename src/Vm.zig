@@ -16,6 +16,7 @@ const STACK_MAX = FRAMES_MAX * UINT8_COUNT;
 const Vm = @This();
 
 allocator: std.mem.Allocator,
+out_writer: std.io.AnyWriter,
 compiler: Compiler,
 frames: [FRAMES_MAX]CallFrame,
 frame_count: u8,
@@ -32,13 +33,17 @@ init_string: ?*Obj.String, // literal "init"
 open_upvalues: ?*Obj.Upvalue, // singly linked list of open upvalues
 objects: ?*Obj, // singly linked list of all allocated objects
 
-pub fn init(vm: *Vm, allocator: std.mem.Allocator) void {
+pub fn init(vm: *Vm, args: struct {
+    allocator: std.mem.Allocator,
+    out_writer: std.io.AnyWriter = std.io.getStdOut().writer().any(),
+}) void {
     vm.reset_stack();
     vm.compiler.init(vm);
-    vm.allocator = allocator;
-    vm.global_names = Table.init(allocator);
+    vm.allocator = args.allocator;
+    vm.out_writer = args.out_writer;
+    vm.global_names = Table.init(args.allocator);
     vm.global_values = List(Value).init();
-    vm.strings = Table.init(allocator);
+    vm.strings = Table.init(args.allocator);
     vm.objects = null;
     vm.init_string = null;
     vm.init_string = Obj.String.copy(vm, "init") catch unreachable;
@@ -281,7 +286,7 @@ fn run(vm: *Vm) !InterpretResult {
                 }
                 vm.push(Value{ .number = -vm.pop().number });
             },
-            .op_print => std.debug.print("{s}\n", .{vm.pop()}),
+            .op_print => vm.out_writer.print("{s}\n", .{vm.pop()}) catch unreachable,
             .op_jump => {
                 const offset = frame.read_u16();
                 frame.ip += offset;
@@ -508,8 +513,8 @@ fn less(a: f64, b: f64) bool {
 }
 
 fn runtime_error(vm: *Vm, comptime fmt: []const u8, args: anytype) void {
-    std.debug.print(fmt, args);
-    std.debug.print("\n", .{});
+    vm.out_writer.print(fmt, args) catch unreachable;
+    vm.out_writer.print("\n", .{}) catch unreachable;
 
     var i = vm.frame_count;
     while (i > 0) {
@@ -518,11 +523,11 @@ fn runtime_error(vm: *Vm, comptime fmt: []const u8, args: anytype) void {
         const function = frame.closure.function;
         const instruction = frame.offset() - 1;
         const line = function.chunk.get_line(instruction);
-        std.debug.print("[line {d}] in ", .{line});
+        vm.out_writer.print("[line {d}] in ", .{line}) catch unreachable;
         if (function.name) |name| {
-            std.debug.print("{s}()\n", .{name.value.as_slice()});
+            vm.out_writer.print("{s}()\n", .{name.value.as_slice()}) catch unreachable;
         } else {
-            std.debug.print("script\n", .{});
+            vm.out_writer.print("script\n", .{}) catch unreachable;
         }
     }
     vm.reset_stack();
@@ -563,4 +568,87 @@ fn bind_method(vm: *Vm, class: *Obj.Class, name: *Obj.String) !bool {
     _ = vm.pop();
     vm.push(bound.obj.value());
     return true;
+}
+
+pub usingnamespace if (@import("builtin").is_test)
+    struct {
+        fn testVm(source: []const u8) !struct {
+            result: InterpretResult,
+            output: std.ArrayList(u8),
+        } {
+            const GcAllocator = @import("GcAllocator.zig");
+            const allocator = std.testing.allocator;
+
+            var vm: Vm = undefined;
+            var gca = GcAllocator.init(&vm, allocator);
+            var out = std.ArrayList(u8).init(allocator);
+            defer gca.deinit();
+            vm.init(.{ .allocator = gca.allocator(), .out_writer = out.writer().any() });
+            defer vm.deinit();
+
+            const result = try vm.interpret(source);
+            return .{ .result = result, .output = out };
+        }
+    }
+else
+    struct {};
+
+const expectEqual = std.testing.expectEqual;
+const expectEqualStrings = std.testing.expectEqualStrings;
+
+test "class - non-method function field" {
+    const t = try Vm.testVm(
+        \\ class Oops {
+        \\   init() {
+        \\     fun f() {
+        \\       print "not a method";
+        \\     }
+        \\
+        \\     this.field = f;
+        \\   }
+        \\ }
+        \\ var oops = Oops();
+        \\ oops.field();
+    );
+    defer t.output.deinit();
+    try expectEqual(.ok, t.result);
+    try expectEqualStrings("not a method\n", t.output.items);
+}
+
+test "globals - function equality" {
+    const t = try Vm.testVm(
+        \\ fun uniq() { return 1; }
+        \\
+        \\ fun outer() {
+        \\   fun uniq() { return 2; }
+        \\   return uniq;
+        \\ }
+        \\
+        \\ print uniq == outer();
+        \\
+        \\ var uv = uniq;
+        \\ print uv == uniq;
+    );
+    defer t.output.deinit();
+    try expectEqual(.ok, t.result);
+    try std.testing.expectEqualStrings("false\ntrue\n", t.output.items);
+}
+
+test "globals - class equality" {
+    const t = try Vm.testVm(
+        \\ class uniq { init(a) { this.a = a; } }
+        \\
+        \\ fun outer() {
+        \\   class uniq { init(b) { this.b = b; } }
+        \\   return uniq;
+        \\ }
+        \\
+        \\ print uniq == outer();
+        \\
+        \\ var uv = uniq;
+        \\ print uv == uniq;
+    );
+    defer t.output.deinit();
+    try expectEqual(.ok, t.result);
+    try std.testing.expectEqualStrings("false\ntrue\n", t.output.items);
 }
