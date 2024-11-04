@@ -246,6 +246,13 @@ fn run(vm: *Vm) !InterpretResult {
                 _ = vm.pop();
                 vm.push(value);
             },
+            .op_get_super => {
+                const name = frame.read_global(vm).obj.as(Obj.String);
+                const superclass = vm.pop().obj.as(Obj.Class);
+                if (!try vm.bind_method(superclass, name)) {
+                    return .runtime_error;
+                }
+            },
             .op_equal => {
                 const b = vm.pop();
                 const a = vm.pop();
@@ -692,7 +699,7 @@ test "globals - function equality" {
     );
     defer t.output.deinit();
     try expectEqual(.ok, t.result);
-    try std.testing.expectEqualStrings("false\ntrue\n", t.output.items);
+    try expectEqualStrings("false\ntrue\n", t.output.items);
 }
 
 test "globals - class equality" {
@@ -711,5 +718,54 @@ test "globals - class equality" {
     );
     defer t.output.deinit();
     try expectEqual(.ok, t.result);
-    try std.testing.expectEqualStrings("false\ntrue\n", t.output.items);
+    try expectEqualStrings("false\ntrue\n", t.output.items);
+}
+
+test "inheritance - method call" {
+    const t = try Vm.testVm(
+        \\ class Doughnut {
+        \\   cook() {
+        \\     print "Dunk in the fryer.";
+        \\   }
+        \\ }
+        \\ class Cruller < Doughnut {
+        \\   finish() {
+        \\     print "Glaze with icing.";
+        \\   }
+        \\ }
+        \\ var c = Cruller();
+        \\ c.cook();
+        \\ c.finish();
+    );
+    defer t.output.deinit();
+    try expectEqual(.ok, t.result);
+    try expectEqualStrings(
+        "Dunk in the fryer.\n" ++
+            "Glaze with icing.\n",
+        t.output.items,
+    );
+}
+
+test "inheritance - super" {
+    const t = try Vm.testVm(
+        \\ class A {
+        \\   method() {
+        \\     print "A method";
+        \\   }
+        \\ }
+        \\ class B < A {
+        \\   method() {
+        \\     print "B method";
+        \\   }
+        \\
+        \\   test() {
+        \\     super.method();
+        \\   }
+        \\ }
+        \\ class C < B {}
+        \\ C().test();
+    );
+    defer t.output.deinit();
+    try expectEqual(.ok, t.result);
+    try expectEqualStrings("A method\n", t.output.items);
 }

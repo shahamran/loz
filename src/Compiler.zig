@@ -52,6 +52,7 @@ pub fn compile(self: *Compiler, source: []const u8) !?*Obj.Function {
 
 const Class = struct {
     enclosing: ?*Class,
+    has_superclass: bool = false,
 };
 
 const Parser = struct {
@@ -236,8 +237,14 @@ fn class_declaration(self: *Compiler) !void {
         if (name.eql(&self.parser.previous)) {
             self.error_("A class can't inherit itself.");
         }
+
+        self.begin_scope();
+        self.add_local(.{ .text = "super", .kind = .super, .line = 0 });
+        try self.define_variable(0);
+
         try self.named_variable(name, false);
         try self.emit_byte(op_u8(.op_inherit));
+        class.has_superclass = true;
     }
 
     try self.named_variable(name, false);
@@ -247,6 +254,7 @@ fn class_declaration(self: *Compiler) !void {
     }
     self.consume(.right_brace, "Expected '}' after class body.");
     try self.emit_byte(op_u8(.op_pop));
+    if (class.has_superclass) try self.end_scope();
 }
 
 fn method(self: *Compiler) !void {
@@ -840,6 +848,24 @@ fn this(self: *Compiler, can_assign: bool) Error!void {
     try self.variable(false);
 }
 
+fn super(self: *Compiler, _: bool) Error!void {
+    if (self.current_class) |class| {
+        if (!class.has_superclass) {
+            self.error_("Can't use 'super' in a class with no superclass.");
+        }
+    } else {
+        self.error_("Can't use 'super' outside of a class.");
+    }
+    self.consume(.dot, "Expected '.' after 'super'.");
+    self.consume(.identifier, "Expected superclass method name.");
+    var s: *Obj.String = undefined;
+    const name = try self.identifier_constant(&self.parser.previous, &s);
+    self.vm.global_values.items[name] = s.obj.value();
+    try self.named_variable(.{ .text = "this", .kind = .this, .line = 0 }, false);
+    try self.named_variable(.{ .text = "super", .kind = .super, .line = 0 }, false);
+    try self.emit_two(op_u8(.op_get_super), name);
+}
+
 /// Parse table entry.
 const ParseRule = struct {
     prefix: ?*const fn (*Compiler, bool) Error!void,
@@ -882,7 +908,7 @@ const rules = std.EnumArray(Scanner.TokenType, ParseRule).init(.{
     .or_ = .{ .prefix = null, .infix = or_, .precedence = .or_ },
     .print = .{ .prefix = null, .infix = null, .precedence = .none },
     .return_ = .{ .prefix = null, .infix = null, .precedence = .none },
-    .super = .{ .prefix = null, .infix = null, .precedence = .none },
+    .super = .{ .prefix = super, .infix = null, .precedence = .none },
     .this = .{ .prefix = this, .infix = null, .precedence = .none },
     .true_ = .{ .prefix = literal, .infix = null, .precedence = .none },
     .var_ = .{ .prefix = null, .infix = null, .precedence = .none },
