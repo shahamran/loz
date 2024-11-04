@@ -401,7 +401,7 @@ fn function(self: *Compiler, kind: FunctionKind) !void {
             if (self.current.function.arity == 255) {
                 self.error_at_current("Can't have more than 255 parameters.");
             }
-            self.current.function.arity += 1;
+            self.current.function.arity +%= 1;
             const constant = try self.parse_variable("Expected parameter name.");
             try self.define_variable(constant);
             if (!self.match(.comma)) break;
@@ -467,7 +467,7 @@ fn argument_list(self: *Compiler) !u8 {
             if (arg_count == 255) {
                 self.error_("Can't have more than 255 arguments.");
             }
-            arg_count += 1;
+            arg_count +%= 1;
             if (!self.match(.comma)) break;
         }
     }
