@@ -321,6 +321,15 @@ fn run(vm: *Vm) !InterpretResult {
                 }
                 frame = &vm.frames[vm.frame_count - 1];
             },
+            .op_super_invoke => {
+                const method = frame.read_global(vm).obj.as(Obj.String);
+                const arg_count = frame.read_byte();
+                const superclass = vm.pop().obj.as(Obj.Class);
+                if (!vm.invoke_from_class(superclass, method, arg_count)) {
+                    return .runtime_error;
+                }
+                frame = &vm.frames[vm.frame_count - 1];
+            },
             .op_closure => {
                 const function = frame.read_constant().obj.as(Obj.Function);
                 const closure = try Obj.Closure.init(vm, function);

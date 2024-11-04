@@ -51,6 +51,7 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
         .op_loop => return jump_instruction("OP_LOOP", .backward, chunk, offset),
         .op_call => return byte_instruction("OP_CALL", chunk, offset),
         .op_invoke => return invoke_instruction("OP_INVOKE", chunk, offset),
+        .op_super_invoke => return invoke_instruction("OP_SUPER_INVOKE", chunk, offset),
         .op_closure => {
             const constant = chunk.code.items[offset + 1];
             const val = chunk.constants.items[constant];

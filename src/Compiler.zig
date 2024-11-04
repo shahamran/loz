@@ -862,8 +862,15 @@ fn super(self: *Compiler, _: bool) Error!void {
     const name = try self.identifier_constant(&self.parser.previous, &s);
     self.vm.global_values.items[name] = s.obj.value();
     try self.named_variable(.{ .text = "this", .kind = .this, .line = 0 }, false);
-    try self.named_variable(.{ .text = "super", .kind = .super, .line = 0 }, false);
-    try self.emit_two(op_u8(.op_get_super), name);
+    if (self.match(.left_paren)) {
+        const arg_count = try self.argument_list();
+        try self.named_variable(.{ .text = "super", .kind = .super, .line = 0 }, false);
+        try self.emit_two(op_u8(.op_super_invoke), name);
+        try self.emit_byte(arg_count);
+    } else {
+        try self.named_variable(.{ .text = "super", .kind = .super, .line = 0 }, false);
+        try self.emit_two(op_u8(.op_get_super), name);
+    }
 }
 
 /// Parse table entry.
