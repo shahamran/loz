@@ -596,7 +596,54 @@ else
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
-test "class - non-method function field" {
+test "string equality" {
+    const t = try Vm.testVm(
+        \\ print "hello" == "world";
+        \\ print "hello" == "hello";
+        \\ var x = "hello";
+        \\ print x == "hello";
+    );
+    defer t.output.deinit();
+    try expectEqual(.ok, t.result);
+    try expectEqualStrings("false\ntrue\ntrue\n", t.output.items);
+}
+
+test "class - nested this" {
+    const t = try Vm.testVm(
+        \\ class Nested {
+        \\   method() {
+        \\     fun function() {
+        \\       print this;
+        \\     }
+        \\
+        \\     function();
+        \\   }
+        \\ }
+        \\ Nested().method();
+    );
+    defer t.output.deinit();
+    try expectEqual(.ok, t.result);
+    try expectEqualStrings("Nested instance\n", t.output.items);
+}
+
+test "class - invalid this" {
+    {
+        var t = try Vm.testVm("print this;");
+        defer t.output.deinit();
+        try expectEqual(.compile_error, t.result);
+    }
+    {
+        var t = try Vm.testVm(
+            \\ fun notMethod() {
+            \\   print this;
+            \\ }
+        );
+        defer t.output.deinit();
+        try expectEqual(.compile_error, t.result);
+    }
+}
+
+test "class - invoke field" {
     const t = try Vm.testVm(
         \\ class Oops {
         \\   init() {
