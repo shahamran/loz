@@ -219,7 +219,7 @@ fn declaration(self: *Compiler) !void {
 }
 
 fn class_declaration(self: *Compiler) !void {
-    const global = try self.parse_variable("Expected class name.");
+    const global = try self.parse_variable("Expect class name.");
     self.mark_initialized();
     const name = self.parser.previous;
     const name_obj = try Obj.String.copy(self.vm, name.text);
@@ -232,7 +232,7 @@ fn class_declaration(self: *Compiler) !void {
     defer self.current_class = class.enclosing;
 
     if (self.match(.less)) {
-        self.consume(.identifier, "Expected superclass name.");
+        self.consume(.identifier, "Expect superclass name.");
         try self.variable(false);
         if (name.eql(&self.parser.previous)) {
             self.error_("A class can't inherit from itself.");
@@ -248,17 +248,17 @@ fn class_declaration(self: *Compiler) !void {
     }
 
     try self.named_variable(name, false);
-    self.consume(.left_brace, "Expected '{' before class body.");
+    self.consume(.left_brace, "Expect '{' before class body.");
     while (!self.check(.right_brace) and !self.check(.eof)) {
         try self.method();
     }
-    self.consume(.right_brace, "Expected '}' after class body.");
+    self.consume(.right_brace, "Expect '}' after class body.");
     try self.emit_byte(op_u8(.op_pop));
     if (class.has_superclass) try self.end_scope();
 }
 
 fn method(self: *Compiler) !void {
-    self.consume(.identifier, "Expected method name.");
+    self.consume(.identifier, "Expect method name.");
     var name: *Obj.String = undefined;
     const name_slot = try self.identifier_constant(&self.parser.previous, &name);
     self.vm.global_values.items[name_slot] = name.obj.value();
@@ -269,20 +269,20 @@ fn method(self: *Compiler) !void {
 }
 
 fn fun_declaration(self: *Compiler) !void {
-    const global = try self.parse_variable("Expected function name.");
+    const global = try self.parse_variable("Expect function name.");
     self.mark_initialized();
     try self.function(.function);
     try self.define_variable(global);
 }
 
 fn var_declaration(self: *Compiler) !void {
-    const slot = try self.parse_variable("Expected variable name.");
+    const slot = try self.parse_variable("Expect variable name.");
     if (self.match(.equal)) {
         try self.expression();
     } else {
         try self.emit_byte(op_u8(.op_nil));
     }
-    self.consume(.semicolon, "Expected ';' after variable declaration.");
+    self.consume(.semicolon, "Expect ';' after variable declaration.");
     try self.define_variable(slot);
 }
 
@@ -308,13 +308,13 @@ fn statement(self: *Compiler) !void {
 
 fn print_statement(self: *Compiler) !void {
     try self.expression();
-    self.consume(.semicolon, "Expected ';' after value.");
+    self.consume(.semicolon, "Expect ';' after value.");
     try self.emit_byte(op_u8(.op_print));
 }
 
 fn for_statement(self: *Compiler) Error!void {
     self.begin_scope();
-    self.consume(.left_paren, "Expected '(' after 'for'.");
+    self.consume(.left_paren, "Expect '(' after 'for'.");
     if (self.match(.semicolon)) {
         // no initialier.
     } else if (self.match(.var_)) {
@@ -327,7 +327,7 @@ fn for_statement(self: *Compiler) Error!void {
     var exit_jump: ?usize = null;
     if (!self.match(.semicolon)) {
         try self.expression();
-        self.consume(.semicolon, "Expected ';' after loop condition.");
+        self.consume(.semicolon, "Expect ';' after loop condition.");
         // jump out of the loop if the condition is false.
         exit_jump = try self.emit_jump(.op_jump_if_false);
         try self.emit_byte(op_u8(.op_pop));
@@ -338,7 +338,7 @@ fn for_statement(self: *Compiler) Error!void {
         const increment_start = self.current_chunk().code.items.len;
         try self.expression();
         try self.emit_byte(op_u8(.op_pop));
-        self.consume(.right_paren, "Expected ')' after 'for' clauses.");
+        self.consume(.right_paren, "Expect ')' after 'for' clauses.");
         try self.emit_loop(loop_start);
         loop_start = increment_start;
         self.patch_jump(body_jump);
@@ -356,9 +356,9 @@ fn for_statement(self: *Compiler) Error!void {
 }
 
 fn if_statement(self: *Compiler) Error!void {
-    self.consume(.left_paren, "Expected '(' after 'if'.");
+    self.consume(.left_paren, "Expect '(' after 'if'.");
     try self.expression();
-    self.consume(.right_paren, "Expected ')' after condition.");
+    self.consume(.right_paren, "Expect ')' after condition.");
 
     const then_jump = try self.emit_jump(.op_jump_if_false);
     try self.emit_byte(op_u8(.op_pop));
@@ -383,16 +383,16 @@ fn return_statement(self: *Compiler) Error!void {
             self.error_("Can't return a value from an initializer.");
         }
         try self.expression();
-        self.consume(.semicolon, "Expected ';' after return value.");
+        self.consume(.semicolon, "Expect ';' after return value.");
         try self.emit_byte(op_u8(.op_return));
     }
 }
 
 fn while_statement(self: *Compiler) Error!void {
     const loop_start = self.current_chunk().code.items.len;
-    self.consume(.left_paren, "Expected '(' after 'while'.");
+    self.consume(.left_paren, "Expect '(' after 'while'.");
     try self.expression();
-    self.consume(.right_paren, "Expected ')' after condition.");
+    self.consume(.right_paren, "Expect ')' after condition.");
     const exit_jump = try self.emit_jump(.op_jump_if_false);
     try self.emit_byte(op_u8(.op_pop));
     try self.statement();
@@ -405,7 +405,7 @@ fn block(self: *Compiler) Error!void {
     while (!self.check(.right_brace) and !self.check(.eof)) {
         try self.declaration();
     }
-    self.consume(.right_brace, "Expected '}' after block.");
+    self.consume(.right_brace, "Expect '}' after block.");
 }
 
 fn function(self: *Compiler, kind: FunctionKind) !void {
@@ -413,20 +413,20 @@ fn function(self: *Compiler, kind: FunctionKind) !void {
     try node.init(self, kind);
     self.begin_scope();
 
-    self.consume(.left_paren, "Expected '(' after function name.");
+    self.consume(.left_paren, "Expect '(' after function name.");
     if (!self.check(.right_paren)) {
         while (true) {
             if (self.current.function.arity == 255) {
                 self.error_at_current("Can't have more than 255 parameters.");
             }
             self.current.function.arity +%= 1;
-            const constant = try self.parse_variable("Expected parameter name.");
+            const constant = try self.parse_variable("Expect parameter name.");
             try self.define_variable(constant);
             if (!self.match(.comma)) break;
         }
     }
-    self.consume(.right_paren, "Expected ')' after parameters.");
-    self.consume(.left_brace, "Expected '{' before function body.");
+    self.consume(.right_paren, "Expect ')' after parameters.");
+    self.consume(.left_brace, "Expect '{' before function body.");
     try self.block();
 
     const fun = node.end();
@@ -441,7 +441,7 @@ fn function(self: *Compiler, kind: FunctionKind) !void {
 
 fn expression_statement(self: *Compiler) !void {
     try self.expression();
-    self.consume(.semicolon, "Expected ';' after expression.");
+    self.consume(.semicolon, "Expect ';' after expression.");
     try self.emit_byte(op_u8(.op_pop));
 }
 
@@ -452,7 +452,7 @@ inline fn expression(self: *Compiler) Error!void {
 fn parse_precedence(self: *Compiler, precedence: Precedence) Error!void {
     self.advance();
     const prefix_rule = rules.get(self.parser.previous.kind).prefix orelse {
-        self.error_("Expected expression.");
+        self.error_("Expect expression.");
         return;
     };
     const can_assign = precedence.int() <= Precedence.assignment.int();
@@ -489,7 +489,7 @@ fn argument_list(self: *Compiler) !u8 {
             if (!self.match(.comma)) break;
         }
     }
-    self.consume(.right_paren, "Expected ')' after arguments.");
+    self.consume(.right_paren, "Expect ')' after arguments.");
     return arg_count;
 }
 
@@ -759,7 +759,7 @@ fn variable(self: *Compiler, can_assign: bool) !void {
 fn grouping(self: *Compiler, can_assign: bool) Error!void {
     _ = can_assign;
     try self.expression();
-    self.consume(.right_paren, "Expected ')' after expression.");
+    self.consume(.right_paren, "Expect ')' after expression.");
 }
 
 /// Parse unary operators.
@@ -823,7 +823,7 @@ fn or_(self: *Compiler, can_assign: bool) Error!void {
 }
 
 fn dot(self: *Compiler, can_assign: bool) Error!void {
-    self.consume(.identifier, "Expected property name after '.'.");
+    self.consume(.identifier, "Expect property name after '.'.");
     var s: *Obj.String = undefined;
     const name = try self.identifier_constant(&self.parser.previous, &s);
     self.vm.global_values.items[name] = s.obj.value();
@@ -856,8 +856,8 @@ fn super(self: *Compiler, _: bool) Error!void {
     } else {
         self.error_("Can't use 'super' outside of a class.");
     }
-    self.consume(.dot, "Expected '.' after 'super'.");
-    self.consume(.identifier, "Expected superclass method name.");
+    self.consume(.dot, "Expect '.' after 'super'.");
+    self.consume(.identifier, "Expect superclass method name.");
     var s: *Obj.String = undefined;
     const name = try self.identifier_constant(&self.parser.previous, &s);
     self.vm.global_values.items[name] = s.obj.value();
