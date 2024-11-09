@@ -48,32 +48,30 @@ pub fn delete(self: *Self, key: *Obj.String) bool {
     if (self.count == 0) return false;
     const entry = find_entry(self.entries, key);
     if (entry.key == null) return false;
-    // Tombstone
-    entry.key = null;
-    entry.value = Value{ .bool_ = true };
+    entry.* = Entry.tombstone();
     return true;
 }
 
 pub fn find_key(self: *const Self, chars: []const u8, hash: u32) ?*Obj.String {
     if (self.count == 0) return null;
     const capacity = self.entries.len;
-    var index = hash % capacity;
+    var index = hash & (capacity - 1);
     while (true) {
         const entry = &self.entries[index];
         if (entry.key) |key| {
             if (key.hash == hash and std.mem.eql(u8, key.value.as_slice(), chars))
                 return key;
-        } else {
+        } else if (entry.value == .nil) {
             // stop if we find an empty non-tombstone entry.
-            if (entry.value == .nil) return null;
+            return null;
         }
-        index = (index + 1) % capacity;
+        index = (index + 1) & (capacity - 1);
     }
 }
 
 fn find_entry(entries: []Entry, key: *Obj.String) *Entry {
     const capacity = entries.len;
-    var index = key.hash % capacity;
+    var index = key.hash & (capacity - 1);
     var tombstone: ?*Entry = null;
     while (true) {
         const entry = &entries[index];
@@ -88,7 +86,7 @@ fn find_entry(entries: []Entry, key: *Obj.String) *Entry {
                 if (tombstone == null) tombstone = entry;
             }
         }
-        index = (index + 1) % capacity;
+        index = (index + 1) & (capacity - 1);
     }
 }
 
@@ -126,4 +124,8 @@ inline fn max_size(self: *const Self) usize {
 pub const Entry = struct {
     key: ?*Obj.String,
     value: Value,
+
+    fn tombstone() Entry {
+        return .{ .key = null, .value = .{ .bool_ = true } };
+    }
 };
