@@ -159,7 +159,7 @@ pub const Function = struct {
 
     obj: Obj,
     arity: u8 = 0,
-    upvalue_count: u8 = 0,
+    upvalue_count: u16 = 0,
     chunk: Chunk,
     name: ?*String = null,
 

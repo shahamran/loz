@@ -68,7 +68,7 @@ pub const Node = struct {
     function: *Obj.Function,
     kind: FunctionKind,
     locals: [UINT8_COUNT]Local,
-    local_count: u8,
+    local_count: u16,
     upvalues: [UINT8_COUNT]Upvalue,
     scope_depth: u8,
 
@@ -117,8 +117,8 @@ pub const Node = struct {
             const local = &self.locals[i];
             if (name.eql(&local.name)) {
                 if (local.depth == null)
-                    self.compiler.error_("Cannot read local variable in its own initializer.");
-                return i;
+                    self.compiler.error_("Can't read local variable in its own initializer.");
+                return @intCast(i);
             }
         }
         return null;
@@ -145,7 +145,7 @@ pub const Node = struct {
                 return @intCast(i);
             }
         }
-        if (upvalue_count == std.math.maxInt(u8)) {
+        if (upvalue_count == UINT8_COUNT) {
             self.compiler.error_("Too many closure variables in function.");
             return 0;
         }
@@ -153,7 +153,7 @@ pub const Node = struct {
         self.upvalues[upvalue_count].is_local = is_local;
         self.upvalues[upvalue_count].index = index;
         self.function.upvalue_count += 1;
-        return upvalue_count;
+        return @intCast(upvalue_count);
     }
 };
 
@@ -260,8 +260,8 @@ fn class_declaration(self: *Compiler) !void {
 fn method(self: *Compiler) !void {
     self.consume(.identifier, "Expect method name.");
     var name: *Obj.String = undefined;
-    const name_slot = try self.identifier_constant(&self.parser.previous, &name);
-    self.vm.global_values.items[name_slot] = name.obj.value();
+    _= try self.identifier_constant(&self.parser.previous, &name);
+    const name_slot = try self.make_constant(name.obj.value());
     const kind: FunctionKind =
         if (std.mem.eql(u8, "init", self.parser.previous.text)) .initializer else .method;
     try self.function(kind);
@@ -501,7 +501,7 @@ inline fn mark_initialized(self: *Compiler) void {
 fn declare_variable(self: *Compiler) void {
     if (self.current.scope_depth == 0) return;
     const name = &self.parser.previous;
-    var i: u8 = self.current.local_count;
+    var i = self.current.local_count;
     while (i > 0) {
         i -= 1;
         const local = &self.current.locals[i];
@@ -509,14 +509,14 @@ fn declare_variable(self: *Compiler) void {
             break;
         }
         if (name.eql(&local.name)) {
-            self.error_("Variable with this name already declared in this scope.");
+            self.error_("Already a variable with this name in this scope.");
         }
     }
     self.add_local(name.*);
 }
 
 fn add_local(self: *Compiler, name: Scanner.Token) void {
-    if (self.current.local_count == std.math.maxInt(u8)) {
+    if (self.current.local_count == UINT8_COUNT) {
         self.error_("Too many local variables in function.");
         return;
     }
@@ -825,8 +825,8 @@ fn or_(self: *Compiler, can_assign: bool) Error!void {
 fn dot(self: *Compiler, can_assign: bool) Error!void {
     self.consume(.identifier, "Expect property name after '.'.");
     var s: *Obj.String = undefined;
-    const name = try self.identifier_constant(&self.parser.previous, &s);
-    self.vm.global_values.items[name] = s.obj.value();
+    _ = try self.identifier_constant(&self.parser.previous, &s);
+    const name = try self.make_constant(s.obj.value());
     if (can_assign and self.match(.equal)) {
         try self.expression();
         try self.emit_two(op_u8(.op_set_property), name);

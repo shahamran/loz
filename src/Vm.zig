@@ -229,7 +229,7 @@ fn run(vm: *Vm) !InterpretResult {
                     return .runtime_error;
                 }
                 const instance = vm.peek(0).obj.as(Obj.Instance);
-                const name = frame.read_global(vm).obj.as(Obj.String);
+                const name = frame.read_constant().obj.as(Obj.String);
                 if (instance.fields.get(name)) |value| {
                     _ = vm.pop(); // instance
                     vm.push(value);
@@ -239,11 +239,11 @@ fn run(vm: *Vm) !InterpretResult {
             },
             .op_set_property => {
                 if (!vm.peek(1).is_obj(.instance)) {
-                    vm.runtime_error("Only instances have properties.", .{});
+                    vm.runtime_error("Only instances have fields.", .{});
                     return .runtime_error;
                 }
                 const instance = vm.peek(1).obj.as(Obj.Instance);
-                const name = frame.read_global(vm).obj.as(Obj.String);
+                const name = frame.read_constant().obj.as(Obj.String);
                 _ = try instance.fields.insert(name, vm.peek(0));
                 const value = vm.pop();
                 _ = vm.pop();
@@ -317,7 +317,7 @@ fn run(vm: *Vm) !InterpretResult {
                 frame = &vm.frames[vm.frame_count - 1];
             },
             .op_invoke => {
-                const method = frame.read_global(vm).obj.as(Obj.String);
+                const method = frame.read_constant().obj.as(Obj.String);
                 const arg_count = frame.read_byte();
                 if (!try vm.invoke(method, arg_count)) {
                     return .runtime_error;
@@ -378,7 +378,7 @@ fn run(vm: *Vm) !InterpretResult {
                 try superclass.obj.as(Obj.Class).methods.copy_all(&subclass.methods);
                 _ = vm.pop();
             },
-            .op_method => try vm.define_method(frame.read_global(vm).obj.as(Obj.String)),
+            .op_method => try vm.define_method(frame.read_constant().obj.as(Obj.String)),
         }
     }
 }
@@ -793,4 +793,34 @@ test "inheritance - super" {
     defer t.deinit();
     try expectEqual(.ok, t.result);
     try expectEqualStrings("A method\n", t.output.items);
+}
+
+test "function - call field" {
+    var t = try Vm.testVm(
+        \\ class Foo {}
+        \\ fun bar(a, b) {
+        \\   print "bar";
+        \\   print a;
+        \\   print b;
+        \\ }
+        \\ var foo = Foo();
+        \\ foo.bar = bar;
+        \\ foo.bar(1, 2);
+    );
+    defer t.deinit();
+    try expectEqual(.ok, t.result);
+    try expectEqualStrings("bar\n1\n2\n", t.output.items);
+}
+
+test "class - recursive method" {
+    var t = try Vm.testVm(
+        \\ class Foo {
+        \\   method() {
+        \\     print method; // expect runtime error: Undefined variable 'method'.
+        \\   }
+        \\ }
+        \\ Foo().method();
+    );
+    defer t.deinit();
+    try expectEqual(.runtime_error, t.result);
 }
