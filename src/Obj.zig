@@ -98,7 +98,7 @@ pub const BoundMethod = struct {
     method: *Closure,
 
     pub fn init(vm: *Vm, receiver: Value, method: *Closure) !*Self {
-        return try vm.allocate_object(Self, .{
+        return try vm.allocateObject(Self, .{
             .receiver = receiver,
             .method = method,
         });
@@ -118,7 +118,7 @@ pub const Class = struct {
     methods: Table,
 
     pub fn init(vm: *Vm, name: *String) !*Self {
-        return try vm.allocate_object(Self, .{
+        return try vm.allocateObject(Self, .{
             .name = name,
             .methods = Table.init(vm.allocator),
         });
@@ -141,7 +141,7 @@ pub const Closure = struct {
     pub fn init(vm: *Vm, function: *Function) !*Self {
         const upvalues = try vm.allocator.alloc(?*Upvalue, function.upvalue_count);
         for (upvalues) |*v| v.* = null;
-        return try vm.allocate_object(Self, .{
+        return try vm.allocateObject(Self, .{
             .function = function,
             .upvalues = upvalues,
         });
@@ -164,7 +164,7 @@ pub const Function = struct {
     name: ?*String = null,
 
     pub fn init(vm: *Vm) !*Self {
-        return try vm.allocate_object(Self, .{ .chunk = Chunk.init() });
+        return try vm.allocateObject(Self, .{ .chunk = Chunk.init() });
     }
 
     pub fn deinit(self: *Self, vm: *Vm) void {
@@ -181,7 +181,7 @@ pub const Function = struct {
         _ = fmt;
         _ = options;
         try if (self.name) |name|
-            writer.print("<fn {s}>", .{name.value.as_slice()})
+            writer.print("<fn {s}>", .{name.value.asSlice()})
         else
             writer.print("<script>", .{});
     }
@@ -196,7 +196,7 @@ pub const Instance = struct {
     fields: Table,
 
     pub fn init(vm: *Vm, class: *Class) !*Self {
-        return try vm.allocate_object(Self, .{
+        return try vm.allocateObject(Self, .{
             .class = class,
             .fields = Table.init(vm.allocator),
         });
@@ -218,7 +218,7 @@ pub const Native = struct {
     arity: u8,
 
     pub fn init(vm: *Vm, arity: u8, function: NativeFn) !*Native {
-        return try vm.allocate_object(Native, .{ .function = function, .arity = arity });
+        return try vm.allocateObject(Native, .{ .function = function, .arity = arity });
     }
 
     pub fn deinit(self: *Native, vm: *Vm) void {
@@ -235,16 +235,16 @@ pub const String = struct {
     hash: u32,
 
     pub fn copy(vm: *Vm, chars: []const u8) !*Self {
-        const hash = hash_fn(chars);
-        if (vm.strings.find_key(chars, hash)) |interned| return interned;
-        const s = try string.String.init_from(vm.allocator, chars);
+        const hash = hashFn(chars);
+        if (vm.strings.findKey(chars, hash)) |interned| return interned;
+        const s = try string.String.initFrom(vm.allocator, chars);
         return try init(vm, s, hash);
     }
 
     pub fn take(vm: *Vm, s: *string.String) !*Self {
-        const chars = s.as_slice();
-        const hash = hash_fn(chars);
-        if (vm.strings.find_key(chars, hash)) |interned| {
+        const chars = s.asSlice();
+        const hash = hashFn(chars);
+        if (vm.strings.findKey(chars, hash)) |interned| {
             s.deinit(vm.allocator);
             return interned;
         }
@@ -252,7 +252,7 @@ pub const String = struct {
     }
 
     fn init(vm: *Vm, s: string.String, hash: u32) !*Self {
-        const ptr = try vm.allocate_object(Self, .{ .value = s, .hash = hash });
+        const ptr = try vm.allocateObject(Self, .{ .value = s, .hash = hash });
         vm.push(ptr.obj.value());
         const is_new = try vm.strings.insert(ptr, .nil);
         _ = vm.pop();
@@ -265,7 +265,7 @@ pub const String = struct {
         vm.allocator.destroy(self);
     }
 
-    fn hash_fn(chars: []const u8) u32 {
+    fn hashFn(chars: []const u8) u32 {
         var hash: u32 = 2166136261;
         for (chars) |char| {
             hash ^= @intCast(char);
@@ -282,7 +282,7 @@ pub const String = struct {
     ) !void {
         _ = fmt;
         _ = options;
-        try writer.print("{s}", .{self.value.as_slice()});
+        try writer.print("{s}", .{self.value.asSlice()});
     }
 };
 
@@ -295,7 +295,7 @@ pub const Upvalue = struct {
     next: ?*Upvalue,
 
     pub fn init(vm: *Vm, args: struct { location: *Value, next: ?*Upvalue = null }) !*Upvalue {
-        return try vm.allocate_object(Upvalue, args);
+        return try vm.allocateObject(Upvalue, args);
     }
 
     pub fn deinit(self: *Upvalue, vm: *Vm) void {

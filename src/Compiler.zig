@@ -93,14 +93,14 @@ pub const Node = struct {
     }
 
     pub fn end(self: *Node) *Obj.Function {
-        self.compiler.emit_return() catch unreachable;
+        self.compiler.emitReturn() catch unreachable;
         const fun = self.function;
         if (config.print_code) {
             if (!self.compiler.parser.had_error) {
                 @import("debug.zig").disassemble_chunk(
-                    self.compiler.current_chunk(),
+                    self.compiler.currentChunk(),
                     if (fun.name) |name|
-                        name.value.as_slice()
+                        name.value.asSlice()
                     else
                         "<script>",
                 );
@@ -110,7 +110,7 @@ pub const Node = struct {
         return fun;
     }
 
-    pub fn resolve_local(self: *const Node, name: *const Scanner.Token) ?u8 {
+    pub fn resolveLocal(self: *const Node, name: *const Scanner.Token) ?u8 {
         var i = self.local_count;
         while (i > 0) {
             i -= 1;
@@ -124,19 +124,19 @@ pub const Node = struct {
         return null;
     }
 
-    pub fn resolve_upvalue(self: *Node, name: *const Scanner.Token) ?u8 {
+    pub fn resolveUpvalue(self: *Node, name: *const Scanner.Token) ?u8 {
         const enclosing = self.enclosing orelse return null;
-        if (enclosing.resolve_local(name)) |local| {
+        if (enclosing.resolveLocal(name)) |local| {
             enclosing.locals[local].is_captured = true;
-            return self.add_upvalue(local, true);
+            return self.addUpvalue(local, true);
         }
-        if (enclosing.resolve_upvalue(name)) |upvalue| {
-            return self.add_upvalue(upvalue, false);
+        if (enclosing.resolveUpvalue(name)) |upvalue| {
+            return self.addUpvalue(upvalue, false);
         }
         return null;
     }
 
-    pub fn add_upvalue(self: *Node, index: u8, is_local: bool) u8 {
+    pub fn addUpvalue(self: *Node, index: u8, is_local: bool) u8 {
         const upvalue_count = self.function.upvalue_count;
         // see if there's an existing upvalue with the same values
         for (0..upvalue_count) |i| {
@@ -207,25 +207,25 @@ const Precedence = enum {
 
 fn declaration(self: *Compiler) !void {
     if (self.match(.class)) {
-        try self.class_declaration();
+        try self.classDeclaration();
     } else if (self.match(.fun)) {
         try self.fun_declaration();
     } else if (self.match(.var_)) {
-        try self.var_declaration();
+        try self.varDeclaration();
     } else {
         try self.statement();
     }
     if (self.parser.panic_mode) self.synchronize();
 }
 
-fn class_declaration(self: *Compiler) !void {
-    const global = try self.parse_variable("Expect class name.");
-    self.mark_initialized();
+fn classDeclaration(self: *Compiler) !void {
+    const global = try self.parseVariable("Expect class name.");
+    self.markInitialized();
     const name = self.parser.previous;
     const name_obj = try Obj.String.copy(self.vm, name.text);
-    const name_slot = try self.make_constant(name_obj.obj.value());
-    try self.emit_two(op_u8(.op_class), name_slot);
-    try self.define_variable(global);
+    const name_slot = try self.makeConstant(name_obj.obj.value());
+    try self.emitBytes(byteFromOp(.op_class), name_slot);
+    try self.defineVariable(global);
 
     var class = Class{ .enclosing = self.current_class };
     self.current_class = &class;
@@ -238,167 +238,167 @@ fn class_declaration(self: *Compiler) !void {
             self.error_("A class can't inherit from itself.");
         }
 
-        self.begin_scope();
-        self.add_local(.{ .text = "super", .kind = .super, .line = 0 });
-        try self.define_variable(0);
+        self.beginScope();
+        self.addLocal(.{ .text = "super", .kind = .super, .line = 0 });
+        try self.defineVariable(0);
 
-        try self.named_variable(name, false);
-        try self.emit_byte(op_u8(.op_inherit));
+        try self.namedVariable(name, false);
+        try self.emitByte(byteFromOp(.op_inherit));
         class.has_superclass = true;
     }
 
-    try self.named_variable(name, false);
+    try self.namedVariable(name, false);
     self.consume(.left_brace, "Expect '{' before class body.");
     while (!self.check(.right_brace) and !self.check(.eof)) {
         try self.method();
     }
     self.consume(.right_brace, "Expect '}' after class body.");
-    try self.emit_byte(op_u8(.op_pop));
-    if (class.has_superclass) try self.end_scope();
+    try self.emitByte(byteFromOp(.op_pop));
+    if (class.has_superclass) try self.endScope();
 }
 
 fn method(self: *Compiler) !void {
     self.consume(.identifier, "Expect method name.");
     var name: *Obj.String = undefined;
-    _= try self.identifier_constant(&self.parser.previous, &name);
-    const name_slot = try self.make_constant(name.obj.value());
+    _ = try self.identifierConstant(&self.parser.previous, &name);
+    const name_slot = try self.makeConstant(name.obj.value());
     const kind: FunctionKind =
         if (std.mem.eql(u8, "init", self.parser.previous.text)) .initializer else .method;
     try self.function(kind);
-    try self.emit_two(op_u8(.op_method), name_slot);
+    try self.emitBytes(byteFromOp(.op_method), name_slot);
 }
 
 fn fun_declaration(self: *Compiler) !void {
-    const global = try self.parse_variable("Expect function name.");
-    self.mark_initialized();
+    const global = try self.parseVariable("Expect function name.");
+    self.markInitialized();
     try self.function(.function);
-    try self.define_variable(global);
+    try self.defineVariable(global);
 }
 
-fn var_declaration(self: *Compiler) !void {
-    const slot = try self.parse_variable("Expect variable name.");
+fn varDeclaration(self: *Compiler) !void {
+    const slot = try self.parseVariable("Expect variable name.");
     if (self.match(.equal)) {
         try self.expression();
     } else {
-        try self.emit_byte(op_u8(.op_nil));
+        try self.emitByte(byteFromOp(.op_nil));
     }
     self.consume(.semicolon, "Expect ';' after variable declaration.");
-    try self.define_variable(slot);
+    try self.defineVariable(slot);
 }
 
 fn statement(self: *Compiler) !void {
     if (self.match(.print)) {
-        try self.print_statement();
+        try self.printStatement();
     } else if (self.match(.for_)) {
-        try self.for_statement();
+        try self.forStatement();
     } else if (self.match(.if_)) {
-        try self.if_statement();
+        try self.ifStatement();
     } else if (self.match(.return_)) {
-        try self.return_statement();
+        try self.returnStatement();
     } else if (self.match(.while_)) {
-        try self.while_statement();
+        try self.whileStatement();
     } else if (self.match(.left_brace)) {
-        self.begin_scope();
+        self.beginScope();
         try self.block();
-        try self.end_scope();
+        try self.endScope();
     } else {
-        try self.expression_statement();
+        try self.expressionStatement();
     }
 }
 
-fn print_statement(self: *Compiler) !void {
+fn printStatement(self: *Compiler) !void {
     try self.expression();
     self.consume(.semicolon, "Expect ';' after value.");
-    try self.emit_byte(op_u8(.op_print));
+    try self.emitByte(byteFromOp(.op_print));
 }
 
-fn for_statement(self: *Compiler) Error!void {
-    self.begin_scope();
+fn forStatement(self: *Compiler) Error!void {
+    self.beginScope();
     self.consume(.left_paren, "Expect '(' after 'for'.");
     if (self.match(.semicolon)) {
         // no initialier.
     } else if (self.match(.var_)) {
-        try self.var_declaration();
+        try self.varDeclaration();
     } else {
-        try self.expression_statement();
+        try self.expressionStatement();
     }
 
-    var loop_start = self.current_chunk().code.items.len;
+    var loop_start = self.currentChunk().code.items.len;
     var exit_jump: ?usize = null;
     if (!self.match(.semicolon)) {
         try self.expression();
         self.consume(.semicolon, "Expect ';' after loop condition.");
         // jump out of the loop if the condition is false.
-        exit_jump = try self.emit_jump(.op_jump_if_false);
-        try self.emit_byte(op_u8(.op_pop));
+        exit_jump = try self.emitJump(.op_jump_if_false);
+        try self.emitByte(byteFromOp(.op_pop));
     }
 
     if (!self.match(.right_paren)) {
-        const body_jump = try self.emit_jump(.op_jump);
-        const increment_start = self.current_chunk().code.items.len;
+        const body_jump = try self.emitJump(.op_jump);
+        const increment_start = self.currentChunk().code.items.len;
         try self.expression();
-        try self.emit_byte(op_u8(.op_pop));
+        try self.emitByte(byteFromOp(.op_pop));
         self.consume(.right_paren, "Expect ')' after 'for' clauses.");
-        try self.emit_loop(loop_start);
+        try self.emitLoop(loop_start);
         loop_start = increment_start;
-        self.patch_jump(body_jump);
+        self.patchJump(body_jump);
     }
 
     try self.statement();
-    try self.emit_loop(loop_start);
+    try self.emitLoop(loop_start);
 
     if (exit_jump) |offset| {
-        self.patch_jump(offset);
-        try self.emit_byte(op_u8(.op_pop)); // condition.
+        self.patchJump(offset);
+        try self.emitByte(byteFromOp(.op_pop)); // condition.
     }
 
-    try self.end_scope();
+    try self.endScope();
 }
 
-fn if_statement(self: *Compiler) Error!void {
+fn ifStatement(self: *Compiler) Error!void {
     self.consume(.left_paren, "Expect '(' after 'if'.");
     try self.expression();
     self.consume(.right_paren, "Expect ')' after condition.");
 
-    const then_jump = try self.emit_jump(.op_jump_if_false);
-    try self.emit_byte(op_u8(.op_pop));
+    const then_jump = try self.emitJump(.op_jump_if_false);
+    try self.emitByte(byteFromOp(.op_pop));
     try self.statement();
 
-    const else_jump = try self.emit_jump(.op_jump);
-    self.patch_jump(then_jump);
-    try self.emit_byte(op_u8(.op_pop));
+    const else_jump = try self.emitJump(.op_jump);
+    self.patchJump(then_jump);
+    try self.emitByte(byteFromOp(.op_pop));
 
     if (self.match(.else_)) try self.statement();
-    self.patch_jump(else_jump);
+    self.patchJump(else_jump);
 }
 
-fn return_statement(self: *Compiler) Error!void {
+fn returnStatement(self: *Compiler) Error!void {
     if (self.current.kind == .script) {
         self.error_("Can't return from top-level code.");
     }
     if (self.match(.semicolon)) {
-        try self.emit_return();
+        try self.emitReturn();
     } else {
         if (self.current.kind == .initializer and !self.check(.semicolon)) {
             self.error_("Can't return a value from an initializer.");
         }
         try self.expression();
         self.consume(.semicolon, "Expect ';' after return value.");
-        try self.emit_byte(op_u8(.op_return));
+        try self.emitByte(byteFromOp(.op_return));
     }
 }
 
-fn while_statement(self: *Compiler) Error!void {
-    const loop_start = self.current_chunk().code.items.len;
+fn whileStatement(self: *Compiler) Error!void {
+    const loop_start = self.currentChunk().code.items.len;
     self.consume(.left_paren, "Expect '(' after 'while'.");
     try self.expression();
     self.consume(.right_paren, "Expect ')' after condition.");
-    const exit_jump = try self.emit_jump(.op_jump_if_false);
-    try self.emit_byte(op_u8(.op_pop));
+    const exit_jump = try self.emitJump(.op_jump_if_false);
+    try self.emitByte(byteFromOp(.op_pop));
     try self.statement();
-    try self.emit_loop(loop_start);
-    self.patch_jump(exit_jump);
-    try self.emit_byte(op_u8(.op_pop));
+    try self.emitLoop(loop_start);
+    self.patchJump(exit_jump);
+    try self.emitByte(byteFromOp(.op_pop));
 }
 
 fn block(self: *Compiler) Error!void {
@@ -411,17 +411,17 @@ fn block(self: *Compiler) Error!void {
 fn function(self: *Compiler, kind: FunctionKind) !void {
     var node: Node = undefined;
     try node.init(self, kind);
-    self.begin_scope();
+    self.beginScope();
 
     self.consume(.left_paren, "Expect '(' after function name.");
     if (!self.check(.right_paren)) {
         while (true) {
             if (self.current.function.arity == 255) {
-                self.error_at_current("Can't have more than 255 parameters.");
+                self.errorAtCurrent("Can't have more than 255 parameters.");
             }
             self.current.function.arity +%= 1;
-            const constant = try self.parse_variable("Expect parameter name.");
-            try self.define_variable(constant);
+            const constant = try self.parseVariable("Expect parameter name.");
+            try self.defineVariable(constant);
             if (!self.match(.comma)) break;
         }
     }
@@ -430,26 +430,26 @@ fn function(self: *Compiler, kind: FunctionKind) !void {
     try self.block();
 
     const fun = node.end();
-    const constant = try self.make_constant(fun.obj.value());
-    try self.emit_two(op_u8(.op_closure), constant);
+    const constant = try self.makeConstant(fun.obj.value());
+    try self.emitBytes(byteFromOp(.op_closure), constant);
 
     for (0..fun.upvalue_count) |i| {
-        try self.emit_byte(if (node.upvalues[i].is_local) 1 else 0);
-        try self.emit_byte(node.upvalues[i].index);
+        try self.emitByte(if (node.upvalues[i].is_local) 1 else 0);
+        try self.emitByte(node.upvalues[i].index);
     }
 }
 
-fn expression_statement(self: *Compiler) !void {
+fn expressionStatement(self: *Compiler) !void {
     try self.expression();
     self.consume(.semicolon, "Expect ';' after expression.");
-    try self.emit_byte(op_u8(.op_pop));
+    try self.emitByte(byteFromOp(.op_pop));
 }
 
 inline fn expression(self: *Compiler) Error!void {
-    try self.parse_precedence(.assignment);
+    try self.parsePrecedence(.assignment);
 }
 
-fn parse_precedence(self: *Compiler, precedence: Precedence) Error!void {
+fn parsePrecedence(self: *Compiler, precedence: Precedence) Error!void {
     self.advance();
     const prefix_rule = rules.get(self.parser.previous.kind).prefix orelse {
         self.error_("Expect expression.");
@@ -469,15 +469,15 @@ fn parse_precedence(self: *Compiler, precedence: Precedence) Error!void {
     }
 }
 
-fn define_variable(self: *Compiler, global: u8) !void {
+fn defineVariable(self: *Compiler, global: u8) !void {
     if (self.current.scope_depth > 0) {
-        self.mark_initialized();
+        self.markInitialized();
         return;
     }
-    try self.emit_two(op_u8(.op_define_global), global);
+    try self.emitBytes(byteFromOp(.op_define_global), global);
 }
 
-fn argument_list(self: *Compiler) !u8 {
+fn argumentList(self: *Compiler) !u8 {
     var arg_count: u8 = 0;
     if (!self.check(.right_paren)) {
         while (true) {
@@ -493,12 +493,12 @@ fn argument_list(self: *Compiler) !u8 {
     return arg_count;
 }
 
-inline fn mark_initialized(self: *Compiler) void {
+inline fn markInitialized(self: *Compiler) void {
     if (self.current.scope_depth == 0) return;
     self.current.locals[self.current.local_count - 1].depth = self.current.scope_depth;
 }
 
-fn declare_variable(self: *Compiler) void {
+fn declareVariable(self: *Compiler) void {
     if (self.current.scope_depth == 0) return;
     const name = &self.parser.previous;
     var i = self.current.local_count;
@@ -512,10 +512,10 @@ fn declare_variable(self: *Compiler) void {
             self.error_("Already a variable with this name in this scope.");
         }
     }
-    self.add_local(name.*);
+    self.addLocal(name.*);
 }
 
-fn add_local(self: *Compiler, name: Scanner.Token) void {
+fn addLocal(self: *Compiler, name: Scanner.Token) void {
     if (self.current.local_count == UINT8_COUNT) {
         self.error_("Too many local variables in function.");
         return;
@@ -527,14 +527,14 @@ fn add_local(self: *Compiler, name: Scanner.Token) void {
     local.is_captured = false;
 }
 
-fn parse_variable(self: *Compiler, error_message: []const u8) !u8 {
+fn parseVariable(self: *Compiler, error_message: []const u8) !u8 {
     self.consume(.identifier, error_message);
-    self.declare_variable();
+    self.declareVariable();
     if (self.current.scope_depth > 0) return 0;
-    return try self.identifier_constant(&self.parser.previous, null);
+    return try self.identifierConstant(&self.parser.previous, null);
 }
 
-fn identifier_constant(self: *Compiler, name: *const Scanner.Token, name_string: ?**Obj.String) !u8 {
+fn identifierConstant(self: *Compiler, name: *const Scanner.Token, name_string: ?**Obj.String) !u8 {
     const ident = try Obj.String.copy(self.vm, name.text);
     if (name_string) |s| s.* = ident;
     if (self.vm.global_names.get(ident)) |index|
@@ -549,39 +549,39 @@ fn identifier_constant(self: *Compiler, name: *const Scanner.Token, name_string:
     return @intCast(index);
 }
 
-fn named_variable(self: *Compiler, name: Scanner.Token, can_assign: bool) !void {
+fn namedVariable(self: *Compiler, name: Scanner.Token, can_assign: bool) !void {
     var arg: u8 = undefined;
     var get_op: OpCode = undefined;
     var set_op: OpCode = undefined;
-    if (self.current.resolve_local(&name)) |local| {
+    if (self.current.resolveLocal(&name)) |local| {
         arg = local;
         get_op = .op_get_local;
         set_op = .op_set_local;
-    } else if (self.current.resolve_upvalue(&name)) |upvalue| {
+    } else if (self.current.resolveUpvalue(&name)) |upvalue| {
         arg = upvalue;
         get_op = .op_get_upvalue;
         set_op = .op_set_upvalue;
     } else {
-        arg = try self.identifier_constant(&name, null);
+        arg = try self.identifierConstant(&name, null);
         get_op = .op_get_global;
         set_op = .op_set_global;
     }
     if (can_assign and self.match(.equal)) {
         try self.expression();
-        try self.emit_two(op_u8(set_op), arg);
+        try self.emitBytes(byteFromOp(set_op), arg);
     } else {
-        try self.emit_two(op_u8(get_op), arg);
+        try self.emitBytes(byteFromOp(get_op), arg);
     }
 }
 
 fn advance(self: *Compiler) void {
     self.parser.previous = self.parser.current;
     while (true) {
-        self.parser.current = self.scanner.scan_token();
+        self.parser.current = self.scanner.scanToken();
         if (self.parser.current.kind != .error_) {
             break;
         }
-        self.error_at_current(self.parser.current.text);
+        self.errorAtCurrent(self.parser.current.text);
     }
 }
 
@@ -590,7 +590,7 @@ inline fn consume(self: *Compiler, kind: Scanner.TokenType, message: []const u8)
         self.advance();
         return;
     }
-    self.error_at_current(message);
+    self.errorAtCurrent(message);
 }
 
 inline fn match(self: *Compiler, kind: Scanner.TokenType) bool {
@@ -603,56 +603,56 @@ inline fn check(self: *Compiler, kind: Scanner.TokenType) bool {
     return self.parser.current.kind == kind;
 }
 
-inline fn emit_byte(self: *Compiler, byte: u8) !void {
-    try self.current_chunk().write(self.vm.allocator, byte, self.parser.previous.line);
+inline fn emitByte(self: *Compiler, byte: u8) !void {
+    try self.currentChunk().write(self.vm.allocator, byte, self.parser.previous.line);
 }
 
-pub inline fn emit_return(self: *Compiler) !void {
+pub inline fn emitReturn(self: *Compiler) !void {
     if (self.current.kind == .initializer) {
-        try self.emit_two(op_u8(.op_get_local), 0);
+        try self.emitBytes(byteFromOp(.op_get_local), 0);
     } else {
-        try self.emit_byte(op_u8(.op_nil));
+        try self.emitByte(byteFromOp(.op_nil));
     }
-    try self.emit_byte(op_u8(.op_return));
+    try self.emitByte(byteFromOp(.op_return));
 }
 
-inline fn emit_two(self: *Compiler, byte1: u8, byte2: u8) !void {
-    try self.emit_byte(byte1);
-    try self.emit_byte(byte2);
+inline fn emitBytes(self: *Compiler, byte1: u8, byte2: u8) !void {
+    try self.emitByte(byte1);
+    try self.emitByte(byte2);
 }
 
-fn emit_jump(self: *Compiler, instruction: OpCode) !usize {
-    try self.emit_byte(op_u8(instruction));
-    try self.emit_two(0xff, 0xff);
+fn emitJump(self: *Compiler, instruction: OpCode) !usize {
+    try self.emitByte(byteFromOp(instruction));
+    try self.emitBytes(0xff, 0xff);
     // the index of the first byte of the jump offset.
-    return self.current_chunk().code.items.len - 2;
+    return self.currentChunk().code.items.len - 2;
 }
 
-fn emit_loop(self: *Compiler, loop_start: usize) !void {
-    try self.emit_byte(op_u8(.op_loop));
-    const offset = self.current_chunk().code.items.len - loop_start + 2;
+fn emitLoop(self: *Compiler, loop_start: usize) !void {
+    try self.emitByte(byteFromOp(.op_loop));
+    const offset = self.currentChunk().code.items.len - loop_start + 2;
     if (offset > std.math.maxInt(u16)) self.error_("Loop body too large.");
-    try self.emit_byte(@intCast((offset >> 8) & 0xff));
-    try self.emit_byte(@intCast(offset & 0xff));
+    try self.emitByte(@intCast((offset >> 8) & 0xff));
+    try self.emitByte(@intCast(offset & 0xff));
 }
 
-fn patch_jump(self: *Compiler, offset: usize) void {
-    const jump = self.current_chunk().code.items.len - offset - 2;
+fn patchJump(self: *Compiler, offset: usize) void {
+    const jump = self.currentChunk().code.items.len - offset - 2;
     if (jump > std.math.maxInt(u16)) {
         self.error_("Too much code to jump over.");
     }
-    self.current_chunk().code.items[offset] = @intCast((jump >> 8) & 0xff);
-    self.current_chunk().code.items[offset + 1] = @intCast(jump & 0xff);
+    self.currentChunk().code.items[offset] = @intCast((jump >> 8) & 0xff);
+    self.currentChunk().code.items[offset + 1] = @intCast(jump & 0xff);
 }
 
-inline fn emit_constant(self: *Compiler, value: Value) !void {
-    try self.emit_two(op_u8(.op_constant), try self.make_constant(value));
+inline fn emitConstant(self: *Compiler, value: Value) !void {
+    try self.emitBytes(byteFromOp(.op_constant), try self.makeConstant(value));
 }
 
-fn make_constant(self: *Compiler, value: Value) !u8 {
+fn makeConstant(self: *Compiler, value: Value) !u8 {
     self.vm.push(value);
     defer _ = self.vm.pop();
-    const index = try self.current_chunk().add_constant(self.vm.allocator, value);
+    const index = try self.currentChunk().add_constant(self.vm.allocator, value);
     if (index > std.math.maxInt(u8)) {
         self.error_("Too many constants in one chunk.");
         return 0;
@@ -673,14 +673,14 @@ fn synchronize(self: *Compiler) void {
 }
 
 pub inline fn error_(self: *Compiler, message: []const u8) void {
-    self.error_at(&self.parser.previous, message);
+    self.errorAt(&self.parser.previous, message);
 }
 
-inline fn error_at_current(self: *Compiler, message: []const u8) void {
-    self.error_at(&self.parser.current, message);
+inline fn errorAtCurrent(self: *Compiler, message: []const u8) void {
+    self.errorAt(&self.parser.current, message);
 }
 
-fn error_at(self: *Compiler, token: *Scanner.Token, message: []const u8) void {
+fn errorAt(self: *Compiler, token: *Scanner.Token, message: []const u8) void {
     if (self.parser.panic_mode) return;
     self.parser.panic_mode = true;
     self.vm.err_writer.print("[line {d}] Error", .{token.line}) catch unreachable;
@@ -696,30 +696,30 @@ fn error_at(self: *Compiler, token: *Scanner.Token, message: []const u8) void {
     self.parser.had_error = true;
 }
 
-inline fn begin_scope(self: *Compiler) void {
+inline fn beginScope(self: *Compiler) void {
     self.current.scope_depth += 1;
 }
 
-fn end_scope(self: *Compiler) !void {
+fn endScope(self: *Compiler) !void {
     self.current.scope_depth -= 1;
     while (self.current.local_count > 0 and
         self.current.locals[self.current.local_count - 1].depth orelse 0 >
         self.current.scope_depth)
     {
         if (self.current.locals[self.current.local_count - 1].is_captured) {
-            try self.emit_byte(op_u8(.op_close_upvalue));
+            try self.emitByte(byteFromOp(.op_close_upvalue));
         } else {
-            try self.emit_byte(op_u8(.op_pop));
+            try self.emitByte(byteFromOp(.op_pop));
         }
         self.current.local_count -= 1;
     }
 }
 
-pub inline fn current_chunk(self: *Compiler) *Chunk {
+pub inline fn currentChunk(self: *Compiler) *Chunk {
     return &self.current.function.chunk;
 }
 
-inline fn op_u8(op: OpCode) u8 {
+inline fn byteFromOp(op: OpCode) u8 {
     return @intFromEnum(op);
 }
 
@@ -727,16 +727,16 @@ inline fn op_u8(op: OpCode) u8 {
 fn number(self: *Compiler, can_assign: bool) Error!void {
     _ = can_assign;
     const value = std.fmt.parseFloat(f64, self.parser.previous.text) catch unreachable;
-    try self.emit_constant(Value{ .number = value });
+    try self.emitConstant(Value{ .number = value });
 }
 
 /// Parse booleans and nil.
 fn literal(self: *Compiler, can_assign: bool) Error!void {
     _ = can_assign;
     switch (self.parser.previous.kind) {
-        .false_ => try self.emit_byte(op_u8(.op_false)),
-        .true_ => try self.emit_byte(op_u8(.op_true)),
-        .nil => try self.emit_byte(op_u8(.op_nil)),
+        .false_ => try self.emitByte(byteFromOp(.op_false)),
+        .true_ => try self.emitByte(byteFromOp(.op_true)),
+        .nil => try self.emitByte(byteFromOp(.op_nil)),
         else => unreachable,
     }
 }
@@ -747,12 +747,12 @@ fn string(self: *Compiler, can_assign: bool) !void {
     const end = self.parser.previous.text.len - 1;
     const chars = self.parser.previous.text[1..end]; // remove the quotes
     const s = try Obj.String.copy(self.vm, chars);
-    try self.emit_constant(s.obj.value());
+    try self.emitConstant(s.obj.value());
 }
 
 /// Parse variable names.
 fn variable(self: *Compiler, can_assign: bool) !void {
-    try self.named_variable(self.parser.previous, can_assign);
+    try self.namedVariable(self.parser.previous, can_assign);
 }
 
 /// Parse parenthesized expressions.
@@ -767,11 +767,11 @@ fn unary(self: *Compiler, can_assign: bool) Error!void {
     _ = can_assign;
     const op_kind = self.parser.previous.kind;
     // compile the operand.
-    try self.parse_precedence(.unary);
+    try self.parsePrecedence(.unary);
     // emit the operator instruction.
     try switch (op_kind) {
-        .bang => self.emit_byte(op_u8(.op_not)),
-        .minus => self.emit_byte(op_u8(.op_negate)),
+        .bang => self.emitByte(byteFromOp(.op_not)),
+        .minus => self.emitByte(byteFromOp(.op_negate)),
         else => unreachable,
     };
 }
@@ -781,61 +781,61 @@ fn binary(self: *Compiler, can_assign: bool) Error!void {
     _ = can_assign;
     const op_kind = self.parser.previous.kind;
     const rule = rules.get(op_kind);
-    try self.parse_precedence(rule.precedence.higher());
+    try self.parsePrecedence(rule.precedence.higher());
     try switch (op_kind) {
-        .bang_equal => self.emit_two(op_u8(.op_equal), op_u8(.op_not)),
-        .equal_equal => self.emit_byte(op_u8(.op_equal)),
-        .greater => self.emit_byte(op_u8(.op_greater)),
-        .greater_equal => self.emit_two(op_u8(.op_less), op_u8(.op_not)),
-        .less => self.emit_byte(op_u8(.op_less)),
-        .less_equal => self.emit_two(op_u8(.op_greater), op_u8(.op_not)),
-        .plus => self.emit_byte(op_u8(.op_add)),
-        .minus => self.emit_byte(op_u8(.op_subtract)),
-        .star => self.emit_byte(op_u8(.op_multiply)),
-        .slash => self.emit_byte(op_u8(.op_divide)),
+        .bang_equal => self.emitBytes(byteFromOp(.op_equal), byteFromOp(.op_not)),
+        .equal_equal => self.emitByte(byteFromOp(.op_equal)),
+        .greater => self.emitByte(byteFromOp(.op_greater)),
+        .greater_equal => self.emitBytes(byteFromOp(.op_less), byteFromOp(.op_not)),
+        .less => self.emitByte(byteFromOp(.op_less)),
+        .less_equal => self.emitBytes(byteFromOp(.op_greater), byteFromOp(.op_not)),
+        .plus => self.emitByte(byteFromOp(.op_add)),
+        .minus => self.emitByte(byteFromOp(.op_subtract)),
+        .star => self.emitByte(byteFromOp(.op_multiply)),
+        .slash => self.emitByte(byteFromOp(.op_divide)),
         else => unreachable,
     };
 }
 
 fn call(self: *Compiler, can_assign: bool) Error!void {
     _ = can_assign;
-    const arg_count = try self.argument_list();
-    try self.emit_two(op_u8(.op_call), arg_count);
+    const arg_count = try self.argumentList();
+    try self.emitBytes(byteFromOp(.op_call), arg_count);
 }
 
 /// Parse logical and as control flow.
 fn and_(self: *Compiler, can_assign: bool) Error!void {
     _ = can_assign;
-    const end_jump = try self.emit_jump(.op_jump_if_false);
-    try self.emit_byte(op_u8(.op_pop));
-    try self.parse_precedence(.and_);
-    self.patch_jump(end_jump);
+    const end_jump = try self.emitJump(.op_jump_if_false);
+    try self.emitByte(byteFromOp(.op_pop));
+    try self.parsePrecedence(.and_);
+    self.patchJump(end_jump);
 }
 
 fn or_(self: *Compiler, can_assign: bool) Error!void {
     _ = can_assign;
-    const else_jump = try self.emit_jump(.op_jump_if_false);
-    const end_jump = try self.emit_jump(.op_jump);
-    self.patch_jump(else_jump);
-    try self.emit_byte(op_u8(.op_pop));
-    try self.parse_precedence(.or_);
-    self.patch_jump(end_jump);
+    const else_jump = try self.emitJump(.op_jump_if_false);
+    const end_jump = try self.emitJump(.op_jump);
+    self.patchJump(else_jump);
+    try self.emitByte(byteFromOp(.op_pop));
+    try self.parsePrecedence(.or_);
+    self.patchJump(end_jump);
 }
 
 fn dot(self: *Compiler, can_assign: bool) Error!void {
     self.consume(.identifier, "Expect property name after '.'.");
     var s: *Obj.String = undefined;
-    _ = try self.identifier_constant(&self.parser.previous, &s);
-    const name = try self.make_constant(s.obj.value());
+    _ = try self.identifierConstant(&self.parser.previous, &s);
+    const name = try self.makeConstant(s.obj.value());
     if (can_assign and self.match(.equal)) {
         try self.expression();
-        try self.emit_two(op_u8(.op_set_property), name);
+        try self.emitBytes(byteFromOp(.op_set_property), name);
     } else if (self.match(.left_paren)) {
-        const arg_count = try self.argument_list();
-        try self.emit_two(op_u8(.op_invoke), name);
-        try self.emit_byte(arg_count);
+        const arg_count = try self.argumentList();
+        try self.emitBytes(byteFromOp(.op_invoke), name);
+        try self.emitByte(arg_count);
     } else {
-        try self.emit_two(op_u8(.op_get_property), name);
+        try self.emitBytes(byteFromOp(.op_get_property), name);
     }
 }
 
@@ -859,17 +859,17 @@ fn super(self: *Compiler, _: bool) Error!void {
     self.consume(.dot, "Expect '.' after 'super'.");
     self.consume(.identifier, "Expect superclass method name.");
     var s: *Obj.String = undefined;
-    const name = try self.identifier_constant(&self.parser.previous, &s);
+    const name = try self.identifierConstant(&self.parser.previous, &s);
     self.vm.global_values.items[name] = s.obj.value();
-    try self.named_variable(.{ .text = "this", .kind = .this, .line = 0 }, false);
+    try self.namedVariable(.{ .text = "this", .kind = .this, .line = 0 }, false);
     if (self.match(.left_paren)) {
-        const arg_count = try self.argument_list();
-        try self.named_variable(.{ .text = "super", .kind = .super, .line = 0 }, false);
-        try self.emit_two(op_u8(.op_super_invoke), name);
-        try self.emit_byte(arg_count);
+        const arg_count = try self.argumentList();
+        try self.namedVariable(.{ .text = "super", .kind = .super, .line = 0 }, false);
+        try self.emitBytes(byteFromOp(.op_super_invoke), name);
+        try self.emitByte(arg_count);
     } else {
-        try self.named_variable(.{ .text = "super", .kind = .super, .line = 0 }, false);
-        try self.emit_two(op_u8(.op_get_super), name);
+        try self.namedVariable(.{ .text = "super", .kind = .super, .line = 0 }, false);
+        try self.emitBytes(byteFromOp(.op_get_super), name);
     }
 }
 

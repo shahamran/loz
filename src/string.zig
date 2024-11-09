@@ -7,7 +7,7 @@ pub const String = struct {
 
     chars: []u8 = &[_]u8{},
 
-    pub fn init_from(allocator: Allocator, slice: []const u8) !Self {
+    pub fn initFrom(allocator: Allocator, slice: []const u8) !Self {
         const chars = try allocator.alloc(u8, slice.len + 1);
         std.mem.copyForwards(u8, chars, slice);
         chars[slice.len] = 0; // null terminator
@@ -23,10 +23,10 @@ pub const String = struct {
     }
 
     pub fn clone(self: *const Self, allocator: Allocator) !Self {
-        return try init_from(allocator, self.as_slice());
+        return try initFrom(allocator, self.asSlice());
     }
 
-    pub fn as_slice(self: *const Self) [:0]const u8 {
+    pub fn asSlice(self: *const Self) [:0]const u8 {
         if (self.chars.len == 0) return "";
         return self.chars[0 .. self.chars.len - 1 :0];
     }
@@ -55,9 +55,9 @@ test "string" {
     const allocator = std.testing.allocator;
     var string = String{};
     defer string.deinit(allocator);
-    try expectEqualSentinel(u8, 0, "", string.as_slice());
+    try expectEqualSentinel(u8, 0, "", string.asSlice());
     try expect(string.str_len() == 0);
     try string.append(allocator, "hello");
-    try expectEqualSentinel(u8, 0, "hello", string.as_slice());
+    try expectEqualSentinel(u8, 0, "hello", string.asSlice());
     try expect(string.str_len() == 5);
 }

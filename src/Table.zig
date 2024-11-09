@@ -26,17 +26,17 @@ pub fn deinit(self: *Self) void {
 
 pub fn get(self: *Self, key: *Obj.String) ?Value {
     if (self.count == 0) return null;
-    const entry = find_entry(self.entries, key);
+    const entry = findEntry(self.entries, key);
     if (entry.key == null) return null;
     return entry.value;
 }
 
 pub fn insert(self: *Self, key: *Obj.String, value: Value) !bool {
-    if (self.count + 1 > self.max_size()) {
+    if (self.count + 1 > self.maxSize()) {
         const new_capacity = common.grow_capacity(self.entries.len);
-        try self.adjust_capacity(new_capacity);
+        try self.adjustCapacity(new_capacity);
     }
-    const entry = find_entry(self.entries, key);
+    const entry = findEntry(self.entries, key);
     const is_new_key = entry.key == null;
     if (is_new_key and entry.value == .nil) self.count += 1;
     entry.key = key;
@@ -46,20 +46,20 @@ pub fn insert(self: *Self, key: *Obj.String, value: Value) !bool {
 
 pub fn delete(self: *Self, key: *Obj.String) bool {
     if (self.count == 0) return false;
-    const entry = find_entry(self.entries, key);
+    const entry = findEntry(self.entries, key);
     if (entry.key == null) return false;
     entry.* = Entry.tombstone();
     return true;
 }
 
-pub fn find_key(self: *const Self, chars: []const u8, hash: u32) ?*Obj.String {
+pub fn findKey(self: *const Self, chars: []const u8, hash: u32) ?*Obj.String {
     if (self.count == 0) return null;
     const capacity = self.entries.len;
     var index = hash & (capacity - 1);
     while (true) {
         const entry = &self.entries[index];
         if (entry.key) |key| {
-            if (key.hash == hash and std.mem.eql(u8, key.value.as_slice(), chars))
+            if (key.hash == hash and std.mem.eql(u8, key.value.asSlice(), chars))
                 return key;
         } else if (entry.value == .nil) {
             // stop if we find an empty non-tombstone entry.
@@ -69,7 +69,7 @@ pub fn find_key(self: *const Self, chars: []const u8, hash: u32) ?*Obj.String {
     }
 }
 
-fn find_entry(entries: []Entry, key: *Obj.String) *Entry {
+fn findEntry(entries: []Entry, key: *Obj.String) *Entry {
     const capacity = entries.len;
     var index = key.hash & (capacity - 1);
     var tombstone: ?*Entry = null;
@@ -90,14 +90,14 @@ fn find_entry(entries: []Entry, key: *Obj.String) *Entry {
     }
 }
 
-pub fn copy_all(self: *const Self, other: *Self) !void {
+pub fn copyAll(self: *const Self, other: *Self) !void {
     for (self.entries) |entry| {
         if (entry.key) |key|
             _ = try other.insert(key, entry.value);
     }
 }
 
-fn adjust_capacity(self: *Self, new_capacity: usize) !void {
+fn adjustCapacity(self: *Self, new_capacity: usize) !void {
     const new_entries = try self.allocator.alloc(Entry, new_capacity);
     for (new_entries) |*entry| {
         entry.key = null;
@@ -107,7 +107,7 @@ fn adjust_capacity(self: *Self, new_capacity: usize) !void {
     for (self.entries) |entry| {
         if (entry.key == null) continue;
         const key = entry.key.?;
-        const dest = find_entry(new_entries, key);
+        const dest = findEntry(new_entries, key);
         dest.key = key;
         dest.value = entry.value;
         self.count += 1;
@@ -116,7 +116,7 @@ fn adjust_capacity(self: *Self, new_capacity: usize) !void {
     self.entries = new_entries;
 }
 
-inline fn max_size(self: *const Self) usize {
+inline fn maxSize(self: *const Self) usize {
     const capacity: f64 = @floatFromInt(self.entries.len);
     return @intFromFloat(MAX_LOAD * capacity);
 }

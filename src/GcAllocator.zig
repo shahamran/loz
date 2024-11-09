@@ -45,7 +45,7 @@ pub inline fn allocator(self: *Self) Allocator {
 fn alloc(ctx: *anyopaque, len: usize, log2_buf_align: u8, ret_addr: usize) ?[*]u8 {
     const self: *Self = @ptrCast(@alignCast(ctx));
     self.bytes_allocated += len;
-    self.maybe_collect();
+    self.maybeCollect();
     return self.parent_allocator.rawAlloc(len, log2_buf_align, ret_addr);
 }
 
@@ -58,7 +58,7 @@ fn resize(ctx: *anyopaque, buf: []u8, log2_buf_align: u8, new_len: usize, ret_ad
     } else {
         self.bytes_allocated -= abs_diff;
     }
-    if (new_len > old_len) self.maybe_collect();
+    if (new_len > old_len) self.maybeCollect();
     return self.parent_allocator.rawResize(buf, log2_buf_align, new_len, ret_addr);
 }
 
@@ -68,22 +68,22 @@ fn free(ctx: *anyopaque, buf: []u8, log2_buf_align: u8, ret_addr: usize) void {
     self.parent_allocator.rawFree(buf, log2_buf_align, ret_addr);
 }
 
-inline fn maybe_collect(self: *Self) void {
+inline fn maybeCollect(self: *Self) void {
     if (config.stress_gc or self.bytes_allocated > self.next_gc) {
-        self.collect_garbage();
+        self.collectGarbage();
     }
 }
 
-fn collect_garbage(self: *Self) void {
+fn collectGarbage(self: *Self) void {
     var before: usize = 0;
     if (config.log_gc) {
         std.debug.print("-- gc begin\n", .{});
         before = self.bytes_allocated;
     }
 
-    self.mark_roots();
-    self.trace_references();
-    table_remove_white(&self.vm.strings);
+    self.markRoots();
+    self.traceReferences();
+    tableRemoveWhite(&self.vm.strings);
     self.sweep();
 
     self.next_gc = self.bytes_allocated * GC_HEAP_GROW_FACTOR;
@@ -98,47 +98,47 @@ fn collect_garbage(self: *Self) void {
     }
 }
 
-fn mark_roots(self: *Self) void {
+fn markRoots(self: *Self) void {
     for (&self.vm.stack) |*slot| {
         if (@intFromPtr(slot) >= @intFromPtr(self.vm.stack_top)) break;
-        self.mark_value(slot.*);
+        self.markValue(slot.*);
     }
     for (0..self.vm.frame_count) |i| {
-        self.mark_object(&self.vm.frames[i].closure.obj);
+        self.markObject(&self.vm.frames[i].closure.obj);
     }
     var upvalue = self.vm.open_upvalues;
     while (upvalue) |v| {
-        self.mark_object(&v.obj);
+        self.markObject(&v.obj);
         upvalue = v.next;
     }
-    self.mark_table(&self.vm.global_names);
-    for (self.vm.global_values.items) |global| self.mark_value(global);
-    self.mark_compiler_roots();
-    if (self.vm.init_string) |s| self.mark_object(&s.obj);
+    self.markTable(&self.vm.global_names);
+    for (self.vm.global_values.items) |global| self.markValue(global);
+    self.markCompilerRoots();
+    if (self.vm.init_string) |s| self.markObject(&s.obj);
 }
 
-fn mark_compiler_roots(self: *Self) void {
+fn markCompilerRoots(self: *Self) void {
     if (!self.vm.compiler.valid) return;
     var node: ?*Compiler.Node = self.vm.compiler.current;
     while (node) |n| {
-        self.mark_object(&n.function.obj);
+        self.markObject(&n.function.obj);
         node = n.enclosing;
     }
 }
 
-inline fn mark_value(self: *Self, value: Value) void {
-    if (value == .obj) self.mark_object(value.obj);
+inline fn markValue(self: *Self, value: Value) void {
+    if (value == .obj) self.markObject(value.obj);
 }
 
-fn mark_table(self: *Self, table: *Table) void {
+fn markTable(self: *Self, table: *Table) void {
     for (table.entries) |*entry| {
         const key: ?*Obj = if (entry.key) |k| &k.obj else null;
-        self.mark_object(key);
-        self.mark_value(entry.value);
+        self.markObject(key);
+        self.markValue(entry.value);
     }
 }
 
-fn mark_object(self: *Self, object: ?*Obj) void {
+fn markObject(self: *Self, object: ?*Obj) void {
     if (object == null) return;
     const obj = object.?;
     if (obj.is_marked) return;
@@ -150,50 +150,50 @@ fn mark_object(self: *Self, object: ?*Obj) void {
     self.gray_stack.append(obj) catch unreachable;
 }
 
-fn trace_references(self: *Self) void {
+fn traceReferences(self: *Self) void {
     while (self.gray_stack.items.len > 0) {
         const object = self.gray_stack.pop();
-        self.blacken_object(object);
+        self.blackenObject(object);
     }
 }
 
-fn blacken_object(self: *Self, object: *Obj) void {
+fn blackenObject(self: *Self, object: *Obj) void {
     if (config.log_gc) {
         std.debug.print("0x{x} blacken {s}\n", .{ @intFromPtr(object), object.value() });
     }
     switch (object.kind) {
         .bound_method => {
             const bound = object.as(Obj.BoundMethod);
-            self.mark_value(bound.receiver);
-            self.mark_object(&bound.method.obj);
+            self.markValue(bound.receiver);
+            self.markObject(&bound.method.obj);
         },
         .class => {
             const class = object.as(Obj.Class);
-            self.mark_object(&class.name.obj);
-            self.mark_table(&class.methods);
+            self.markObject(&class.name.obj);
+            self.markTable(&class.methods);
         },
         .closure => {
             const closure = object.as(Obj.Closure);
-            self.mark_object(&closure.function.obj);
+            self.markObject(&closure.function.obj);
             for (closure.upvalues) |v|
-                if (v) |upvalue| self.mark_object(&upvalue.obj);
+                if (v) |upvalue| self.markObject(&upvalue.obj);
         },
         .function => {
             const fun = object.as(Obj.Function);
-            if (fun.name) |s| self.mark_object(&s.obj);
-            for (fun.chunk.constants.items) |constant| self.mark_value(constant);
+            if (fun.name) |s| self.markObject(&s.obj);
+            for (fun.chunk.constants.items) |constant| self.markValue(constant);
         },
         .instance => {
             const inst = object.as(Obj.Instance);
-            self.mark_object(&inst.class.obj);
-            self.mark_table(&inst.fields);
+            self.markObject(&inst.class.obj);
+            self.markTable(&inst.fields);
         },
-        .upvalue => self.mark_value(object.as(Obj.Upvalue).closed),
+        .upvalue => self.markValue(object.as(Obj.Upvalue).closed),
         .native, .string => {},
     }
 }
 
-fn table_remove_white(table: *Table) void {
+fn tableRemoveWhite(table: *Table) void {
     for (table.entries) |entry| {
         if (entry.key) |key| {
             if (!key.obj.is_marked) {

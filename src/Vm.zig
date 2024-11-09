@@ -39,7 +39,7 @@ pub fn init(vm: *Vm, args: struct {
     out_writer: std.io.AnyWriter = std.io.getStdOut().writer().any(),
     err_writer: std.io.AnyWriter = std.io.getStdErr().writer().any(),
 }) void {
-    vm.reset_stack();
+    vm.resetStack();
     vm.compiler.init(vm);
     vm.allocator = args.allocator;
     vm.out_writer = args.out_writer;
@@ -50,7 +50,7 @@ pub fn init(vm: *Vm, args: struct {
     vm.objects = null;
     vm.init_string = null;
     vm.init_string = Obj.String.copy(vm, "init") catch unreachable;
-    vm.define_native("clock", 0, clock_native) catch unreachable;
+    vm.defineNative("clock", 0, clockNative) catch unreachable;
 }
 
 pub fn interpret(vm: *Vm, source: []const u8) !InterpretResult {
@@ -73,7 +73,7 @@ pub const InterpretResult = enum {
     runtime_error,
 };
 
-pub fn allocate_object(vm: *Vm, comptime T: type, args: anytype) !*T {
+pub fn allocateObject(vm: *Vm, comptime T: type, args: anytype) !*T {
     var ptr = try vm.allocator.create(T);
     ptr.obj = .{
         .kind = T.kind,
@@ -104,7 +104,7 @@ pub fn deinit(vm: *Vm) void {
     vm.strings.deinit();
     vm.global_names.deinit();
     vm.global_values.deinit(vm.allocator);
-    vm.free_objects();
+    vm.freeObjects();
 }
 
 pub inline fn push(vm: *Vm, value: Value) void {
@@ -117,7 +117,7 @@ pub inline fn pop(vm: *Vm) Value {
     return vm.stack_top[0];
 }
 
-fn free_objects(vm: *Vm) void {
+fn freeObjects(vm: *Vm) void {
     var object = vm.objects;
     while (object) |o| {
         const next = o.next;
@@ -133,25 +133,25 @@ const CallFrame = struct {
     ip: [*]u8,
     slots: [*]Value,
 
-    inline fn read_byte(self: *Self) u8 {
+    inline fn readByte(self: *Self) u8 {
         const byte = self.ip[0];
         self.ip += 1;
         return byte;
     }
 
-    inline fn read_u16(self: *Self) u16 {
+    inline fn readTwo(self: *Self) u16 {
         const byte1 = self.ip[0];
         const byte2 = self.ip[1];
         self.ip += 2;
         return (@as(u16, byte1) << 8) | @as(u16, byte2);
     }
 
-    inline fn read_constant(self: *Self) Value {
-        return self.constants()[self.read_byte()];
+    inline fn readConstant(self: *Self) Value {
+        return self.constants()[self.readByte()];
     }
 
-    inline fn read_global(self: *Self, vm: *Vm) *Value {
-        return &vm.global_values.items[self.read_byte()];
+    inline fn readGlobal(self: *Self, vm: *Vm) *Value {
+        return &vm.global_values.items[self.readByte()];
     }
 
     inline fn constants(self: *Self) []Value {
@@ -180,10 +180,10 @@ fn run(vm: *Vm) !InterpretResult {
             _ = @import("debug.zig")
                 .disassemble_instruction(&frame.closure.function.chunk, frame.offset());
         }
-        const instruction: OpCode = @enumFromInt(frame.read_byte());
+        const instruction: OpCode = @enumFromInt(frame.readByte());
         switch (instruction) {
             .op_constant => {
-                const constant = frame.read_constant();
+                const constant = frame.readConstant();
                 vm.push(constant);
             },
             .op_nil => vm.push(Value{ .nil = {} }),
@@ -191,45 +191,45 @@ fn run(vm: *Vm) !InterpretResult {
             .op_false => vm.push(Value{ .bool_ = false }),
             .op_pop => _ = vm.pop(),
             .op_get_local => {
-                const slot = frame.read_byte();
+                const slot = frame.readByte();
                 vm.push(frame.slots[slot]);
             },
             .op_set_local => {
-                const slot = frame.read_byte();
+                const slot = frame.readByte();
                 frame.slots[slot] = vm.peek(0);
             },
             .op_get_global => {
-                const value = frame.read_global(vm).*;
+                const value = frame.readGlobal(vm).*;
                 if (value == .undefined_) {
-                    vm.runtime_error("Undefined variable.", .{});
+                    vm.runtimeError("Undefined variable.", .{});
                     return .runtime_error;
                 }
                 vm.push(value);
             },
-            .op_define_global => frame.read_global(vm).* = vm.pop(),
+            .op_define_global => frame.readGlobal(vm).* = vm.pop(),
             .op_set_global => {
-                const global = frame.read_global(vm);
+                const global = frame.readGlobal(vm);
                 if (global.* == .undefined_) {
-                    vm.runtime_error("Undefined variable.", .{});
+                    vm.runtimeError("Undefined variable.", .{});
                     return .runtime_error;
                 }
                 global.* = vm.peek(0);
             },
             .op_get_upvalue => {
-                const slot = frame.read_byte();
+                const slot = frame.readByte();
                 vm.push(frame.closure.upvalues[slot].?.location.*);
             },
             .op_set_upvalue => {
-                const slot = frame.read_byte();
+                const slot = frame.readByte();
                 frame.closure.upvalues[slot].?.location.* = vm.peek(0);
             },
             .op_get_property => {
                 if (!vm.peek(0).is_obj(.instance)) {
-                    vm.runtime_error("Only instances have properties.", .{});
+                    vm.runtimeError("Only instances have properties.", .{});
                     return .runtime_error;
                 }
                 const instance = vm.peek(0).obj.as(Obj.Instance);
-                const name = frame.read_constant().obj.as(Obj.String);
+                const name = frame.readConstant().obj.as(Obj.String);
                 if (instance.fields.get(name)) |value| {
                     _ = vm.pop(); // instance
                     vm.push(value);
@@ -239,18 +239,18 @@ fn run(vm: *Vm) !InterpretResult {
             },
             .op_set_property => {
                 if (!vm.peek(1).is_obj(.instance)) {
-                    vm.runtime_error("Only instances have fields.", .{});
+                    vm.runtimeError("Only instances have fields.", .{});
                     return .runtime_error;
                 }
                 const instance = vm.peek(1).obj.as(Obj.Instance);
-                const name = frame.read_constant().obj.as(Obj.String);
+                const name = frame.readConstant().obj.as(Obj.String);
                 _ = try instance.fields.insert(name, vm.peek(0));
                 const value = vm.pop();
                 _ = vm.pop();
                 vm.push(value);
             },
             .op_get_super => {
-                const name = frame.read_global(vm).obj.as(Obj.String);
+                const name = frame.readGlobal(vm).obj.as(Obj.String);
                 const superclass = vm.pop().obj.as(Obj.Class);
                 if (!try vm.bind_method(superclass, name)) {
                     return .runtime_error;
@@ -266,7 +266,7 @@ fn run(vm: *Vm) !InterpretResult {
                     const b = vm.peek(0).obj.as(Obj.String);
                     const a = vm.peek(1).obj.as(Obj.String);
                     var result = try a.value.clone(vm.allocator);
-                    try result.append(vm.allocator, b.value.as_slice());
+                    try result.append(vm.allocator, b.value.asSlice());
                     const obj = try Obj.String.take(vm, &result);
                     _ = vm.pop();
                     _ = vm.pop();
@@ -276,84 +276,84 @@ fn run(vm: *Vm) !InterpretResult {
                     const a = vm.pop().number;
                     vm.push(Value{ .number = a + b });
                 } else {
-                    vm.runtime_error("Operands must be two numbers or two strings.", .{});
+                    vm.runtimeError("Operands must be two numbers or two strings.", .{});
                     return .runtime_error;
                 }
             },
-            .op_subtract => vm.binary_op(f64, subtract) orelse return .runtime_error,
-            .op_multiply => vm.binary_op(f64, multiply) orelse return .runtime_error,
-            .op_divide => vm.binary_op(f64, divide) orelse return .runtime_error,
-            .op_greater => vm.binary_op(bool, greater) orelse return .runtime_error,
-            .op_less => vm.binary_op(bool, less) orelse return .runtime_error,
+            .op_subtract => vm.binaryOp(f64, subtract) orelse return .runtime_error,
+            .op_multiply => vm.binaryOp(f64, multiply) orelse return .runtime_error,
+            .op_divide => vm.binaryOp(f64, divide) orelse return .runtime_error,
+            .op_greater => vm.binaryOp(bool, greater) orelse return .runtime_error,
+            .op_less => vm.binaryOp(bool, less) orelse return .runtime_error,
             .op_not => {
                 const value = vm.pop();
-                vm.push(Value{ .bool_ = is_falsey(value) });
+                vm.push(Value{ .bool_ = isFalsey(value) });
             },
             .op_negate => {
                 if (vm.peek(0) != .number) {
-                    vm.runtime_error("Operand must be a number.", .{});
+                    vm.runtimeError("Operand must be a number.", .{});
                     return .runtime_error;
                 }
                 vm.push(Value{ .number = -vm.pop().number });
             },
             .op_print => vm.out_writer.print("{s}\n", .{vm.pop()}) catch unreachable,
             .op_jump => {
-                const offset = frame.read_u16();
+                const offset = frame.readTwo();
                 frame.ip += offset;
             },
             .op_jump_if_false => {
-                const offset = frame.read_u16();
-                if (is_falsey(vm.peek(0))) frame.ip += offset;
+                const offset = frame.readTwo();
+                if (isFalsey(vm.peek(0))) frame.ip += offset;
             },
             .op_loop => {
-                const offset = frame.read_u16();
+                const offset = frame.readTwo();
                 frame.ip -= offset;
             },
             .op_call => {
-                const arg_count = frame.read_byte();
-                if (!try vm.call_value(vm.peek(arg_count), arg_count)) {
+                const arg_count = frame.readByte();
+                if (!try vm.callValue(vm.peek(arg_count), arg_count)) {
                     return .runtime_error;
                 }
                 frame = &vm.frames[vm.frame_count - 1];
             },
             .op_invoke => {
-                const method = frame.read_constant().obj.as(Obj.String);
-                const arg_count = frame.read_byte();
+                const method = frame.readConstant().obj.as(Obj.String);
+                const arg_count = frame.readByte();
                 if (!try vm.invoke(method, arg_count)) {
                     return .runtime_error;
                 }
                 frame = &vm.frames[vm.frame_count - 1];
             },
             .op_super_invoke => {
-                const method = frame.read_global(vm).obj.as(Obj.String);
-                const arg_count = frame.read_byte();
+                const method = frame.readGlobal(vm).obj.as(Obj.String);
+                const arg_count = frame.readByte();
                 const superclass = vm.pop().obj.as(Obj.Class);
-                if (!vm.invoke_from_class(superclass, method, arg_count)) {
+                if (!vm.invokeFromClass(superclass, method, arg_count)) {
                     return .runtime_error;
                 }
                 frame = &vm.frames[vm.frame_count - 1];
             },
             .op_closure => {
-                const function = frame.read_constant().obj.as(Obj.Function);
+                const function = frame.readConstant().obj.as(Obj.Function);
                 const closure = try Obj.Closure.init(vm, function);
                 vm.push(closure.obj.value());
                 for (closure.upvalues) |*upvalue| {
-                    const is_local = frame.read_byte();
-                    const index = frame.read_byte();
+                    const is_local = frame.readByte();
+                    const index = frame.readByte();
                     if (is_local == 1) {
-                        upvalue.* = try vm.capture_upvalue(&frame.slots[index]);
+                        upvalue.* = try vm.captureUpvalue(&frame.slots[index]);
                     } else {
                         upvalue.* = frame.closure.upvalues[index];
                     }
                 }
             },
             .op_close_upvalue => {
-                vm.close_upvalues(vm.stack_top - 1);
+                vm.closeUpvalue(vm.stack_top - 1);
                 _ = vm.pop();
             },
             .op_return => {
                 const result = vm.pop();
-                vm.close_upvalues(frame.slots);
+                vm.closeUpvalue(frame.slots);
                 vm.frame_count -= 1;
                 if (vm.frame_count == 0) {
                     _ = vm.pop();
@@ -364,26 +364,26 @@ fn run(vm: *Vm) !InterpretResult {
                 frame = &vm.frames[vm.frame_count - 1];
             },
             .op_class => {
-                const name = frame.read_constant().obj.as(Obj.String);
+                const name = frame.readConstant().obj.as(Obj.String);
                 const class = try Obj.Class.init(vm, name);
                 vm.push(class.obj.value());
             },
             .op_inherit => {
                 const superclass = vm.peek(1);
                 if (!superclass.is_obj(.class)) {
-                    vm.runtime_error("Superclass must be a class.", .{});
+                    vm.runtimeError("Superclass must be a class.", .{});
                     return .runtime_error;
                 }
                 const subclass = vm.peek(0).obj.as(Obj.Class);
-                try superclass.obj.as(Obj.Class).methods.copy_all(&subclass.methods);
+                try superclass.obj.as(Obj.Class).methods.copyAll(&subclass.methods);
                 _ = vm.pop();
             },
-            .op_method => try vm.define_method(frame.read_constant().obj.as(Obj.String)),
+            .op_method => try vm.defineMethod(frame.readConstant().obj.as(Obj.String)),
         }
     }
 }
 
-fn reset_stack(vm: *Vm) void {
+fn resetStack(vm: *Vm) void {
     vm.stack_top = &vm.stack;
     vm.frame_count = 0;
     vm.open_upvalues = null;
@@ -393,7 +393,7 @@ inline fn peek(vm: *Vm, distance: usize) Value {
     return (vm.stack_top - 1 - distance)[0];
 }
 
-fn call_value(vm: *Vm, callee: Value, arg_count: u8) !bool {
+fn callValue(vm: *Vm, callee: Value, arg_count: u8) !bool {
     switch (callee) {
         .obj => |o| switch (o.kind) {
             .bound_method => {
@@ -409,7 +409,7 @@ fn call_value(vm: *Vm, callee: Value, arg_count: u8) !bool {
                 if (class.methods.get(vm.init_string.?)) |initializer| {
                     return vm.call(initializer.obj.as(Obj.Closure), arg_count);
                 } else if (arg_count != 0) {
-                    vm.runtime_error("Expected 0 arguments but got {d}.", .{arg_count});
+                    vm.runtimeError("Expected 0 arguments but got {d}.", .{arg_count});
                     return false;
                 }
                 return true;
@@ -419,7 +419,7 @@ fn call_value(vm: *Vm, callee: Value, arg_count: u8) !bool {
                 const native = o.as(Obj.Native);
                 const arity = native.arity;
                 if (arg_count != arity) {
-                    vm.runtime_error("Expected {d} arguments but got {d}.", .{ arity, arg_count });
+                    vm.runtimeError("Expected {d} arguments but got {d}.", .{ arity, arg_count });
                     return false;
                 }
                 const result = native.function(arg_count, vm.stack_top - arg_count);
@@ -431,33 +431,33 @@ fn call_value(vm: *Vm, callee: Value, arg_count: u8) !bool {
         },
         else => {},
     }
-    vm.runtime_error("Can only call functions and classes.", .{});
+    vm.runtimeError("Can only call functions and classes.", .{});
     return false;
 }
 
 fn invoke(vm: *Vm, name: *Obj.String, arg_count: u8) !bool {
     const receiver = vm.peek(arg_count);
     if (!receiver.is_obj(.instance)) {
-        vm.runtime_error("Only instances have methods.", .{});
+        vm.runtimeError("Only instances have methods.", .{});
         return false;
     }
     const instance = receiver.obj.as(Obj.Instance);
     if (instance.fields.get(name)) |value| {
         (vm.stack_top - arg_count - 1)[0] = value;
-        return vm.call_value(value, arg_count);
+        return vm.callValue(value, arg_count);
     }
-    return vm.invoke_from_class(instance.class, name, arg_count);
+    return vm.invokeFromClass(instance.class, name, arg_count);
 }
 
-fn invoke_from_class(vm: *Vm, class: *Obj.Class, name: *Obj.String, arg_count: u8) bool {
+fn invokeFromClass(vm: *Vm, class: *Obj.Class, name: *Obj.String, arg_count: u8) bool {
     const method = class.methods.get(name) orelse {
-        vm.runtime_error("Undefined property '{s}'.", .{name});
+        vm.runtimeError("Undefined property '{s}'.", .{name});
         return false;
     };
     return vm.call(method.obj.as(Obj.Closure), arg_count);
 }
 
-fn capture_upvalue(vm: *Vm, local: *Value) !*Obj.Upvalue {
+fn captureUpvalue(vm: *Vm, local: *Value) !*Obj.Upvalue {
     var prev_upvalue: ?*Obj.Upvalue = null;
     var upvalue = vm.open_upvalues;
     while (upvalue != null and @intFromPtr(upvalue.?.location) > @intFromPtr(local)) {
@@ -476,7 +476,7 @@ fn capture_upvalue(vm: *Vm, local: *Value) !*Obj.Upvalue {
     return created_upvalue;
 }
 
-fn close_upvalues(vm: *Vm, last: [*]Value) void {
+fn closeUpvalue(vm: *Vm, last: [*]Value) void {
     while (vm.open_upvalues) |upvalue| {
         // same as while condition having: upvalue.location >= last
         if (@intFromPtr(last) > @intFromPtr(upvalue.location)) break;
@@ -489,11 +489,11 @@ fn close_upvalues(vm: *Vm, last: [*]Value) void {
 fn call(vm: *Vm, closure: *Obj.Closure, arg_count: u8) bool {
     const arity = closure.function.arity;
     if (arg_count != arity) {
-        vm.runtime_error("Expected {d} arguments but got {d}.", .{ arity, arg_count });
+        vm.runtimeError("Expected {d} arguments but got {d}.", .{ arity, arg_count });
         return false;
     }
     if (vm.frame_count == Vm.FRAMES_MAX) {
-        vm.runtime_error("Stack overflow.", .{});
+        vm.runtimeError("Stack overflow.", .{});
         return false;
     }
     var frame = &vm.frames[vm.frame_count];
@@ -504,7 +504,7 @@ fn call(vm: *Vm, closure: *Obj.Closure, arg_count: u8) bool {
     return true;
 }
 
-fn is_falsey(value: Value) bool {
+fn isFalsey(value: Value) bool {
     return switch (value) {
         .nil => true,
         .bool_ => |b| !b,
@@ -512,9 +512,9 @@ fn is_falsey(value: Value) bool {
     };
 }
 
-fn binary_op(vm: *Vm, comptime Ret: type, fun: *const fn (f64, f64) Ret) ?void {
+fn binaryOp(vm: *Vm, comptime Ret: type, fun: *const fn (f64, f64) Ret) ?void {
     if (vm.peek(0) != .number or vm.peek(1) != .number) {
-        vm.runtime_error("Operands must be numbers.", .{});
+        vm.runtimeError("Operands must be numbers.", .{});
         return null;
     }
     const b = vm.pop().number;
@@ -545,7 +545,7 @@ fn less(a: f64, b: f64) bool {
     return a < b;
 }
 
-fn runtime_error(vm: *Vm, comptime fmt: []const u8, args: anytype) void {
+fn runtimeError(vm: *Vm, comptime fmt: []const u8, args: anytype) void {
     vm.err_writer.print(fmt, args) catch unreachable;
     vm.err_writer.print("\n", .{}) catch unreachable;
 
@@ -558,15 +558,15 @@ fn runtime_error(vm: *Vm, comptime fmt: []const u8, args: anytype) void {
         const line = function.chunk.get_line(instruction);
         vm.err_writer.print("[line {d}] in ", .{line}) catch unreachable;
         if (function.name) |name| {
-            vm.err_writer.print("{s}()\n", .{name.value.as_slice()}) catch unreachable;
+            vm.err_writer.print("{s}()\n", .{name.value.asSlice()}) catch unreachable;
         } else {
             vm.err_writer.print("script\n", .{}) catch unreachable;
         }
     }
-    vm.reset_stack();
+    vm.resetStack();
 }
 
-fn define_native(vm: *Vm, name: []const u8, arity: u8, function: Obj.NativeFn) !void {
+fn defineNative(vm: *Vm, name: []const u8, arity: u8, function: Obj.NativeFn) !void {
     vm.push((try Obj.String.copy(vm, name)).obj.value());
     vm.push((try Obj.Native.init(vm, arity, function)).obj.value());
     const value = Value{ .number = @floatFromInt(vm.global_values.items.len) };
@@ -576,7 +576,7 @@ fn define_native(vm: *Vm, name: []const u8, arity: u8, function: Obj.NativeFn) !
     _ = vm.pop();
 }
 
-fn clock_native(arg_count: u8, args: [*]Value) Value {
+fn clockNative(arg_count: u8, args: [*]Value) Value {
     _ = arg_count;
     _ = args;
     const time = std.time;
@@ -585,7 +585,7 @@ fn clock_native(arg_count: u8, args: [*]Value) Value {
     return Value{ .number = timestamp / us_per_s };
 }
 
-fn define_method(vm: *Vm, name: *Obj.String) !void {
+fn defineMethod(vm: *Vm, name: *Obj.String) !void {
     const method = vm.peek(0);
     const class = vm.peek(1).obj.as(Obj.Class);
     _ = try class.methods.insert(name, method);
@@ -594,7 +594,7 @@ fn define_method(vm: *Vm, name: *Obj.String) !void {
 
 fn bind_method(vm: *Vm, class: *Obj.Class, name: *Obj.String) !bool {
     const method = class.methods.get(name) orelse {
-        vm.runtime_error("Undefined property '{s}'.", .{name});
+        vm.runtimeError("Undefined property '{s}'.", .{name});
         return false;
     };
     const bound = try Obj.BoundMethod.init(vm, vm.peek(0), method.obj.as(Obj.Closure));
