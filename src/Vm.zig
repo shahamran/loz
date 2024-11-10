@@ -198,7 +198,7 @@ fn run(vm: *Vm) !InterpretResult {
             }
             std.debug.print("\n", .{});
             _ = @import("debug.zig")
-                .disassemble_instruction(&frame.closure.function.chunk, frame.offset());
+                .disassembleInstruction(&frame.closure.function.chunk, frame.offset());
         }
         const instruction: OpCode = @enumFromInt(frame.readByte());
         switch (instruction) {

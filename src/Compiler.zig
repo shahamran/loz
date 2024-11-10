@@ -97,7 +97,7 @@ pub const Node = struct {
         const fun = self.function;
         if (config.print_code) {
             if (!self.compiler.parser.had_error) {
-                @import("debug.zig").disassemble_chunk(
+                @import("debug.zig").disassembleChunk(
                     self.compiler.currentChunk(),
                     if (fun.name) |name|
                         name.value.asSlice()
