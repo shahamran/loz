@@ -26,13 +26,18 @@ stack: [STACK_MAX]Value,
 stack_top: [*]Value,
 
 global_names: Table, // maps global variable names to their indices in the globals list
-global_values: List(Value),
+global_values: List(Global),
 
 strings: Table, // interned strings
 init_string: ?*Obj.String, // literal "init"
 
 open_upvalues: ?*Obj.Upvalue, // singly linked list of open upvalues
 objects: ?*Obj, // singly linked list of all allocated objects
+
+pub const Global = struct {
+    name: *Obj.String,
+    value: Value,
+};
 
 pub fn init(vm: *Vm, args: struct {
     allocator: std.mem.Allocator,
@@ -45,12 +50,13 @@ pub fn init(vm: *Vm, args: struct {
     vm.out_writer = args.out_writer;
     vm.err_writer = args.err_writer;
     vm.global_names = Table.init(args.allocator);
-    vm.global_values = List(Value).init();
+    vm.global_values = List(Global).init();
     vm.strings = Table.init(args.allocator);
     vm.objects = null;
     vm.init_string = null;
     vm.init_string = Obj.String.copy(vm, "init") catch unreachable;
-    vm.defineNative("clock", 0, clockNative) catch unreachable;
+    const clock = Obj.Native.init(vm, 0, clockNative) catch unreachable;
+    _ = vm.defineGlobal("clock", clock.obj.value()) catch unreachable;
 }
 
 pub fn interpret(vm: *Vm, source: []const u8) !InterpretResult {
@@ -117,6 +123,20 @@ pub inline fn pop(vm: *Vm) Value {
     return vm.stack_top[0];
 }
 
+pub fn defineGlobal(vm: *Vm, name: []const u8, value: Value) !usize {
+    vm.push(value);
+    defer _ = vm.pop();
+    vm.push((try Obj.String.copy(vm, name)).obj.value());
+    defer _ = vm.pop();
+
+    const index = vm.global_values.items.len;
+    const index_val = Value{ .number = @floatFromInt(index) };
+    const ident = vm.peek(0).obj.as(Obj.String);
+    _ = try vm.global_names.insert(ident, index_val);
+    try vm.global_values.push(vm.allocator, .{ .name = ident, .value = value });
+    return index;
+}
+
 fn freeObjects(vm: *Vm) void {
     var object = vm.objects;
     while (object) |o| {
@@ -150,7 +170,7 @@ const CallFrame = struct {
         return self.constants()[self.readByte()];
     }
 
-    inline fn readGlobal(self: *Self, vm: *Vm) *Value {
+    inline fn readGlobal(self: *Self, vm: *Vm) *Global {
         return &vm.global_values.items[self.readByte()];
     }
 
@@ -199,21 +219,21 @@ fn run(vm: *Vm) !InterpretResult {
                 frame.slots[slot] = vm.peek(0);
             },
             .op_get_global => {
-                const value = frame.readGlobal(vm).*;
-                if (value == .undefined_) {
-                    vm.runtimeError("Undefined variable.", .{});
+                const global = frame.readGlobal(vm);
+                if (global.value == .undefined_) {
+                    vm.runtimeError("Undefined variable '{s}'.", .{global.name});
                     return .runtime_error;
                 }
-                vm.push(value);
+                vm.push(global.value);
             },
-            .op_define_global => frame.readGlobal(vm).* = vm.pop(),
+            .op_define_global => frame.readGlobal(vm).value = vm.pop(),
             .op_set_global => {
                 const global = frame.readGlobal(vm);
-                if (global.* == .undefined_) {
-                    vm.runtimeError("Undefined variable.", .{});
+                if (global.value == .undefined_) {
+                    vm.runtimeError("Undefined variable '{s}'.", .{global.name});
                     return .runtime_error;
                 }
-                global.* = vm.peek(0);
+                global.value = vm.peek(0);
             },
             .op_get_upvalue => {
                 const slot = frame.readByte();
@@ -229,7 +249,7 @@ fn run(vm: *Vm) !InterpretResult {
                     return .runtime_error;
                 }
                 const instance = vm.peek(0).obj.as(Obj.Instance);
-                const name = frame.readConstant().obj.as(Obj.String);
+                const name = frame.readGlobal(vm).name;
                 if (instance.fields.get(name)) |value| {
                     _ = vm.pop(); // instance
                     vm.push(value);
@@ -243,14 +263,14 @@ fn run(vm: *Vm) !InterpretResult {
                     return .runtime_error;
                 }
                 const instance = vm.peek(1).obj.as(Obj.Instance);
-                const name = frame.readConstant().obj.as(Obj.String);
+                const name = frame.readGlobal(vm).name;
                 _ = try instance.fields.insert(name, vm.peek(0));
                 const value = vm.pop();
                 _ = vm.pop();
                 vm.push(value);
             },
             .op_get_super => {
-                const name = frame.readGlobal(vm).obj.as(Obj.String);
+                const name = frame.readGlobal(vm).name;
                 const superclass = vm.pop().obj.as(Obj.Class);
                 if (!try vm.bind_method(superclass, name)) {
                     return .runtime_error;
@@ -317,7 +337,7 @@ fn run(vm: *Vm) !InterpretResult {
                 frame = &vm.frames[vm.frame_count - 1];
             },
             .op_invoke => {
-                const method = frame.readConstant().obj.as(Obj.String);
+                const method = frame.readGlobal(vm).name;
                 const arg_count = frame.readByte();
                 if (!try vm.invoke(method, arg_count)) {
                     return .runtime_error;
@@ -325,7 +345,7 @@ fn run(vm: *Vm) !InterpretResult {
                 frame = &vm.frames[vm.frame_count - 1];
             },
             .op_super_invoke => {
-                const method = frame.readGlobal(vm).obj.as(Obj.String);
+                const method = frame.readGlobal(vm).name;
                 const arg_count = frame.readByte();
                 const superclass = vm.pop().obj.as(Obj.Class);
                 if (!vm.invokeFromClass(superclass, method, arg_count)) {
@@ -364,7 +384,7 @@ fn run(vm: *Vm) !InterpretResult {
                 frame = &vm.frames[vm.frame_count - 1];
             },
             .op_class => {
-                const name = frame.readConstant().obj.as(Obj.String);
+                const name = frame.readGlobal(vm).name;
                 const class = try Obj.Class.init(vm, name);
                 vm.push(class.obj.value());
             },
@@ -378,7 +398,7 @@ fn run(vm: *Vm) !InterpretResult {
                 try superclass.obj.as(Obj.Class).methods.copyAll(&subclass.methods);
                 _ = vm.pop();
             },
-            .op_method => try vm.defineMethod(frame.readConstant().obj.as(Obj.String)),
+            .op_method => try vm.defineMethod(frame.readGlobal(vm).name),
         }
     }
 }
@@ -566,19 +586,7 @@ fn runtimeError(vm: *Vm, comptime fmt: []const u8, args: anytype) void {
     vm.resetStack();
 }
 
-fn defineNative(vm: *Vm, name: []const u8, arity: u8, function: Obj.NativeFn) !void {
-    vm.push((try Obj.String.copy(vm, name)).obj.value());
-    vm.push((try Obj.Native.init(vm, arity, function)).obj.value());
-    const value = Value{ .number = @floatFromInt(vm.global_values.items.len) };
-    _ = try vm.global_names.insert(vm.peek(1).obj.as(Obj.String), value);
-    try vm.global_values.push(vm.allocator, vm.peek(0));
-    _ = vm.pop();
-    _ = vm.pop();
-}
-
-fn clockNative(arg_count: u8, args: [*]Value) Value {
-    _ = arg_count;
-    _ = args;
+fn clockNative(_: u8, _: [*]Value) Value {
     const time = std.time;
     const timestamp: f64 = @floatFromInt(time.microTimestamp());
     const us_per_s: f64 = @floatFromInt(time.us_per_s);

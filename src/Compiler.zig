@@ -219,13 +219,13 @@ fn declaration(self: *Compiler) !void {
 }
 
 fn classDeclaration(self: *Compiler) !void {
-    const global = try self.parseVariable("Expect class name.");
-    self.markInitialized();
+    self.consume(.identifier, "Expect class name.");
     const name = self.parser.previous;
-    const name_obj = try Obj.String.copy(self.vm, name.text);
-    const name_slot = try self.makeConstant(name_obj.obj.value());
+    const name_slot = try self.identifierConstant(&name);
+    self.declareVariable();
+
     try self.emitBytes(byteFromOp(.op_class), name_slot);
-    try self.defineVariable(global);
+    try self.defineVariable(name_slot);
 
     var class = Class{ .enclosing = self.current_class };
     self.current_class = &class;
@@ -259,9 +259,7 @@ fn classDeclaration(self: *Compiler) !void {
 
 fn method(self: *Compiler) !void {
     self.consume(.identifier, "Expect method name.");
-    var name: *Obj.String = undefined;
-    _ = try self.identifierConstant(&self.parser.previous, &name);
-    const name_slot = try self.makeConstant(name.obj.value());
+    const name_slot = try self.identifierConstant(&self.parser.previous);
     const kind: FunctionKind =
         if (std.mem.eql(u8, "init", self.parser.previous.text)) .initializer else .method;
     try self.function(kind);
@@ -531,22 +529,14 @@ fn parseVariable(self: *Compiler, error_message: []const u8) !u8 {
     self.consume(.identifier, error_message);
     self.declareVariable();
     if (self.current.scope_depth > 0) return 0;
-    return try self.identifierConstant(&self.parser.previous, null);
+    return try self.identifierConstant(&self.parser.previous);
 }
 
-fn identifierConstant(self: *Compiler, name: *const Scanner.Token, name_string: ?**Obj.String) !u8 {
+fn identifierConstant(self: *Compiler, name: *const Scanner.Token) !u8 {
     const ident = try Obj.String.copy(self.vm, name.text);
-    if (name_string) |s| s.* = ident;
     if (self.vm.global_names.get(ident)) |index|
         return @intFromFloat(index.number);
-
-    self.vm.push(ident.obj.value());
-    defer _ = self.vm.pop(); // gc dance
-
-    try self.vm.global_values.push(self.vm.allocator, Value.undefined_);
-    const index = self.vm.global_values.items.len - 1;
-    _ = try self.vm.global_names.insert(ident, Value{ .number = @floatFromInt(index) });
-    return @intCast(index);
+    return @intCast(try self.vm.defineGlobal(name.text, .undefined_));
 }
 
 fn namedVariable(self: *Compiler, name: Scanner.Token, can_assign: bool) !void {
@@ -562,7 +552,7 @@ fn namedVariable(self: *Compiler, name: Scanner.Token, can_assign: bool) !void {
         get_op = .op_get_upvalue;
         set_op = .op_set_upvalue;
     } else {
-        arg = try self.identifierConstant(&name, null);
+        arg = try self.identifierConstant(&name);
         get_op = .op_get_global;
         set_op = .op_set_global;
     }
@@ -824,9 +814,7 @@ fn or_(self: *Compiler, can_assign: bool) Error!void {
 
 fn dot(self: *Compiler, can_assign: bool) Error!void {
     self.consume(.identifier, "Expect property name after '.'.");
-    var s: *Obj.String = undefined;
-    _ = try self.identifierConstant(&self.parser.previous, &s);
-    const name = try self.makeConstant(s.obj.value());
+    const name = try self.identifierConstant(&self.parser.previous);
     if (can_assign and self.match(.equal)) {
         try self.expression();
         try self.emitBytes(byteFromOp(.op_set_property), name);
@@ -858,9 +846,7 @@ fn super(self: *Compiler, _: bool) Error!void {
     }
     self.consume(.dot, "Expect '.' after 'super'.");
     self.consume(.identifier, "Expect superclass method name.");
-    var s: *Obj.String = undefined;
-    const name = try self.identifierConstant(&self.parser.previous, &s);
-    self.vm.global_values.items[name] = s.obj.value();
+    const name = try self.identifierConstant(&self.parser.previous);
     try self.namedVariable(.{ .text = "this", .kind = .this, .line = 0 }, false);
     if (self.match(.left_paren)) {
         const arg_count = try self.argumentList();

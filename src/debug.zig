@@ -33,8 +33,8 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
         .op_set_global => return byte_instruction("OP_SET_GLOBAL", chunk, offset),
         .op_get_upvalue => return byte_instruction("OP_GET_UPVALUE", chunk, offset),
         .op_set_upvalue => return byte_instruction("OP_SET_UPVALUE", chunk, offset),
-        .op_get_property => return constant_instruction("OP_GET_PROPERTY", chunk, offset),
-        .op_set_property => return constant_instruction("OP_SET_PROPERTY", chunk, offset),
+        .op_get_property => return byte_instruction("OP_GET_PROPERTY", chunk, offset),
+        .op_set_property => return byte_instruction("OP_SET_PROPERTY", chunk, offset),
         .op_get_super => return byte_instruction("OP_GET_SUPER", chunk, offset),
         .op_equal => return simple_instruction("OP_EQUAL", offset),
         .op_greater => return simple_instruction("OP_GREATER", offset),
@@ -72,9 +72,9 @@ pub fn disassemble_instruction(chunk: *const Chunk, offset: usize) usize {
         },
         .op_close_upvalue => return simple_instruction("OP_CLOSE_UPVALUE", offset),
         .op_return => return simple_instruction("OP_RETURN", offset),
-        .op_class => return constant_instruction("OP_CLASS", chunk, offset),
+        .op_class => return byte_instruction("OP_CLASS", chunk, offset),
         .op_inherit => return simple_instruction("OP_INHERIT", offset),
-        .op_method => return constant_instruction("OP_METHOD", chunk, offset),
+        .op_method => return byte_instruction("OP_METHOD", chunk, offset),
     }
     std.debug.print("Unknown opcode {}\n", .{chunk.code[offset]});
     return offset + 1;

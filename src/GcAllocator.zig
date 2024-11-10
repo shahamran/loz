@@ -112,7 +112,7 @@ fn markRoots(self: *Self) void {
         upvalue = v.next;
     }
     self.markTable(&self.vm.global_names);
-    for (self.vm.global_values.items) |global| self.markValue(global);
+    for (self.vm.global_values.items) |global| self.markValue(global.value);
     self.markCompilerRoots();
     if (self.vm.init_string) |s| self.markObject(&s.obj);
 }
