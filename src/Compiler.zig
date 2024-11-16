@@ -79,10 +79,10 @@ pub const Node = struct {
         self.kind = kind;
         self.local_count = 0;
         self.scope_depth = 0;
-        self.function = try Obj.Function.init(compiler.vm);
+        self.function = Obj.Function.init(compiler.vm);
         compiler.current = self;
         if (kind != .script) {
-            self.function.name = try Obj.String.copy(compiler.vm, compiler.parser.previous.text);
+            self.function.name = Obj.String.copy(compiler.vm, compiler.parser.previous.text);
         }
 
         const local = &self.locals[self.local_count];
@@ -533,7 +533,7 @@ fn parseVariable(self: *Compiler, error_message: []const u8) !u8 {
 }
 
 fn identifierConstant(self: *Compiler, name: *const Scanner.Token) !u8 {
-    const ident = try Obj.String.copy(self.vm, name.text);
+    const ident = Obj.String.copy(self.vm, name.text);
     if (self.vm.global_names.get(ident)) |index|
         return @intFromFloat(index.number);
     return @intCast(try self.vm.defineGlobal(name.text, .undefined_));
@@ -736,7 +736,7 @@ fn string(self: *Compiler, can_assign: bool) !void {
     _ = can_assign;
     const end = self.parser.previous.text.len - 1;
     const chars = self.parser.previous.text[1..end]; // remove the quotes
-    const s = try Obj.String.copy(self.vm, chars);
+    const s = Obj.String.copy(self.vm, chars);
     try self.emitConstant(s.obj.value());
 }
 

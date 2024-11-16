@@ -54,8 +54,8 @@ pub fn init(vm: *Vm, args: struct {
     vm.strings = Table.init(args.allocator);
     vm.objects = null;
     vm.init_string = null;
-    vm.init_string = Obj.String.copy(vm, "init") catch unreachable;
-    const clock = Obj.Native.init(vm, 0, clockNative) catch unreachable;
+    vm.init_string = Obj.String.copy(vm, "init");
+    const clock = Obj.Native.init(vm, 0, clockNative);
     _ = vm.defineGlobal("clock", clock.obj.value()) catch unreachable;
 }
 
@@ -65,7 +65,7 @@ pub fn interpret(vm: *Vm, source: []const u8) !InterpretResult {
     { // gc dance!
         vm.push(function.obj.value());
         defer _ = vm.pop();
-        closure = try Obj.Closure.init(vm, function);
+        closure = Obj.Closure.init(vm, function);
     }
     vm.push(closure.obj.value());
     _ = vm.call(closure, 0);
@@ -79,8 +79,8 @@ pub const InterpretResult = enum {
     runtime_error,
 };
 
-pub fn allocateObject(vm: *Vm, comptime T: type, args: anytype) !*T {
-    var ptr = try vm.allocator.create(T);
+pub fn allocateObject(vm: *Vm, comptime T: type, args: anytype) *T {
+    var ptr = vm.allocator.create(T) catch unreachable;
     ptr.obj = .{
         .kind = T.kind,
         .is_marked = false,
@@ -126,7 +126,7 @@ pub inline fn pop(vm: *Vm) Value {
 pub fn defineGlobal(vm: *Vm, name: []const u8, value: Value) !usize {
     vm.push(value);
     defer _ = vm.pop();
-    vm.push((try Obj.String.copy(vm, name)).obj.value());
+    vm.push((Obj.String.copy(vm, name)).obj.value());
     defer _ = vm.pop();
 
     const index = vm.global_values.items.len;
@@ -287,7 +287,7 @@ fn run(vm: *Vm) !InterpretResult {
                     const a = vm.peek(1).obj.as(Obj.String);
                     var result = try a.value.clone(vm.allocator);
                     try result.append(vm.allocator, b.value.asSlice());
-                    const obj = try Obj.String.take(vm, &result);
+                    const obj = Obj.String.take(vm, &result);
                     _ = vm.pop();
                     _ = vm.pop();
                     vm.push(obj.obj.value());
@@ -331,7 +331,7 @@ fn run(vm: *Vm) !InterpretResult {
             },
             .op_call => {
                 const arg_count = frame.readByte();
-                if (!try vm.callValue(vm.peek(arg_count), arg_count)) {
+                if (!vm.callValue(vm.peek(arg_count), arg_count)) {
                     return .runtime_error;
                 }
                 frame = &vm.frames[vm.frame_count - 1];
@@ -339,7 +339,7 @@ fn run(vm: *Vm) !InterpretResult {
             .op_invoke => {
                 const method = frame.readGlobal(vm).name;
                 const arg_count = frame.readByte();
-                if (!try vm.invoke(method, arg_count)) {
+                if (!vm.invoke(method, arg_count)) {
                     return .runtime_error;
                 }
                 frame = &vm.frames[vm.frame_count - 1];
@@ -355,7 +355,7 @@ fn run(vm: *Vm) !InterpretResult {
             },
             .op_closure => {
                 const function = frame.readConstant().obj.as(Obj.Function);
-                const closure = try Obj.Closure.init(vm, function);
+                const closure = Obj.Closure.init(vm, function);
                 vm.push(closure.obj.value());
                 for (closure.upvalues) |*upvalue| {
                     const is_local = frame.readByte();
@@ -385,7 +385,7 @@ fn run(vm: *Vm) !InterpretResult {
             },
             .op_class => {
                 const name = frame.readGlobal(vm).name;
-                const class = try Obj.Class.init(vm, name);
+                const class = Obj.Class.init(vm, name);
                 vm.push(class.obj.value());
             },
             .op_inherit => {
@@ -413,7 +413,7 @@ inline fn peek(vm: *Vm, distance: usize) Value {
     return (vm.stack_top - 1 - distance)[0];
 }
 
-fn callValue(vm: *Vm, callee: Value, arg_count: u8) !bool {
+fn callValue(vm: *Vm, callee: Value, arg_count: u8) bool {
     switch (callee) {
         .obj => |o| switch (o.kind) {
             .bound_method => {
@@ -425,7 +425,7 @@ fn callValue(vm: *Vm, callee: Value, arg_count: u8) !bool {
             .class => {
                 const class = o.as(Obj.Class);
                 const ptr = vm.stack_top - arg_count - 1;
-                ptr[0] = (try Obj.Instance.init(vm, class)).obj.value();
+                ptr[0] = Obj.Instance.init(vm, class).obj.value();
                 if (class.methods.get(vm.init_string.?)) |initializer| {
                     return vm.call(initializer.obj.as(Obj.Closure), arg_count);
                 } else if (arg_count != 0) {
@@ -455,7 +455,7 @@ fn callValue(vm: *Vm, callee: Value, arg_count: u8) !bool {
     return false;
 }
 
-fn invoke(vm: *Vm, name: *Obj.String, arg_count: u8) !bool {
+fn invoke(vm: *Vm, name: *Obj.String, arg_count: u8) bool {
     const receiver = vm.peek(arg_count);
     if (!receiver.is_obj(.instance)) {
         vm.runtimeError("Only instances have methods.", .{});
@@ -487,7 +487,7 @@ fn captureUpvalue(vm: *Vm, local: *Value) !*Obj.Upvalue {
     if (upvalue != null and upvalue.?.location == local) {
         return upvalue.?;
     }
-    const created_upvalue = try Obj.Upvalue.init(vm, .{ .location = local, .next = upvalue });
+    const created_upvalue = Obj.Upvalue.init(vm, .{ .location = local, .next = upvalue });
     if (prev_upvalue) |v| {
         v.next = created_upvalue;
     } else {
@@ -605,7 +605,7 @@ fn bind_method(vm: *Vm, class: *Obj.Class, name: *Obj.String) !bool {
         vm.runtimeError("Undefined property '{s}'.", .{name});
         return false;
     };
-    const bound = try Obj.BoundMethod.init(vm, vm.peek(0), method.obj.as(Obj.Closure));
+    const bound = Obj.BoundMethod.init(vm, vm.peek(0), method.obj.as(Obj.Closure));
     _ = vm.pop();
     vm.push(bound.obj.value());
     return true;

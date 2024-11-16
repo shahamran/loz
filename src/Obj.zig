@@ -97,8 +97,8 @@ pub const BoundMethod = struct {
     receiver: Value,
     method: *Closure,
 
-    pub fn init(vm: *Vm, receiver: Value, method: *Closure) !*Self {
-        return try vm.allocateObject(Self, .{
+    pub fn init(vm: *Vm, receiver: Value, method: *Closure) *Self {
+        return vm.allocateObject(Self, .{
             .receiver = receiver,
             .method = method,
         });
@@ -117,8 +117,8 @@ pub const Class = struct {
     name: *String,
     methods: Table,
 
-    pub fn init(vm: *Vm, name: *String) !*Self {
-        return try vm.allocateObject(Self, .{
+    pub fn init(vm: *Vm, name: *String) *Self {
+        return vm.allocateObject(Self, .{
             .name = name,
             .methods = Table.init(vm.allocator),
         });
@@ -138,10 +138,11 @@ pub const Closure = struct {
     function: *Function,
     upvalues: []?*Upvalue,
 
-    pub fn init(vm: *Vm, function: *Function) !*Self {
-        const upvalues = try vm.allocator.alloc(?*Upvalue, function.upvalue_count);
+    pub fn init(vm: *Vm, function: *Function) *Self {
+        const upvalues =
+            vm.allocator.alloc(?*Upvalue, function.upvalue_count) catch unreachable;
         for (upvalues) |*v| v.* = null;
-        return try vm.allocateObject(Self, .{
+        return vm.allocateObject(Self, .{
             .function = function,
             .upvalues = upvalues,
         });
@@ -163,8 +164,8 @@ pub const Function = struct {
     chunk: Chunk,
     name: ?*String = null,
 
-    pub fn init(vm: *Vm) !*Self {
-        return try vm.allocateObject(Self, .{ .chunk = Chunk.init() });
+    pub fn init(vm: *Vm) *Self {
+        return vm.allocateObject(Self, .{ .chunk = Chunk.init() });
     }
 
     pub fn deinit(self: *Self, vm: *Vm) void {
@@ -195,8 +196,8 @@ pub const Instance = struct {
     class: *Class,
     fields: Table,
 
-    pub fn init(vm: *Vm, class: *Class) !*Self {
-        return try vm.allocateObject(Self, .{
+    pub fn init(vm: *Vm, class: *Class) *Self {
+        return vm.allocateObject(Self, .{
             .class = class,
             .fields = Table.init(vm.allocator),
         });
@@ -217,8 +218,8 @@ pub const Native = struct {
     function: NativeFn,
     arity: u8,
 
-    pub fn init(vm: *Vm, arity: u8, function: NativeFn) !*Native {
-        return try vm.allocateObject(Native, .{ .function = function, .arity = arity });
+    pub fn init(vm: *Vm, arity: u8, function: NativeFn) *Native {
+        return vm.allocateObject(Native, .{ .function = function, .arity = arity });
     }
 
     pub fn deinit(self: *Native, vm: *Vm) void {
@@ -234,27 +235,27 @@ pub const String = struct {
     value: string.String,
     hash: u32,
 
-    pub fn copy(vm: *Vm, chars: []const u8) !*Self {
+    pub fn copy(vm: *Vm, chars: []const u8) *Self {
         const hash = hashFn(chars);
         if (vm.strings.findKey(chars, hash)) |interned| return interned;
-        const s = try string.String.initFrom(vm.allocator, chars);
-        return try init(vm, s, hash);
+        const s = string.String.initFrom(vm.allocator, chars) catch unreachable;
+        return init(vm, s, hash);
     }
 
-    pub fn take(vm: *Vm, s: *string.String) !*Self {
+    pub fn take(vm: *Vm, s: *string.String) *Self {
         const chars = s.asSlice();
         const hash = hashFn(chars);
         if (vm.strings.findKey(chars, hash)) |interned| {
             s.deinit(vm.allocator);
             return interned;
         }
-        return try init(vm, s.*, hash);
+        return init(vm, s.*, hash);
     }
 
-    fn init(vm: *Vm, s: string.String, hash: u32) !*Self {
-        const ptr = try vm.allocateObject(Self, .{ .value = s, .hash = hash });
+    fn init(vm: *Vm, s: string.String, hash: u32) *Self {
+        const ptr = vm.allocateObject(Self, .{ .value = s, .hash = hash });
         vm.push(ptr.obj.value());
-        const is_new = try vm.strings.insert(ptr, .nil);
+        const is_new = vm.strings.insert(ptr, .nil) catch unreachable;
         _ = vm.pop();
         std.debug.assert(is_new);
         return ptr;
@@ -294,8 +295,8 @@ pub const Upvalue = struct {
     closed: Value = .nil,
     next: ?*Upvalue,
 
-    pub fn init(vm: *Vm, args: struct { location: *Value, next: ?*Upvalue = null }) !*Upvalue {
-        return try vm.allocateObject(Upvalue, args);
+    pub fn init(vm: *Vm, args: struct { location: *Value, next: ?*Upvalue = null }) *Upvalue {
+        return vm.allocateObject(Upvalue, args);
     }
 
     pub fn deinit(self: *Upvalue, vm: *Vm) void {
